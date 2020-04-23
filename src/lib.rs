@@ -1,11 +1,15 @@
+use std::borrow::Cow;
 use std::mem;
+use std::sync::Arc;
 
 use byteorder::{ByteOrder, LittleEndian};
 
 use block::{Block, BlockIter};
 use varint::varint_decode64;
+use compression::{CompressionType, decompress};
 
 mod block;
+mod compression;
 mod varint;
 
 // #include "mtbl.h"
@@ -30,58 +34,6 @@ const INITIAL_SORTER_VEC_SIZE: usize = 131072;
 
 const DEFAULT_FILESET_RELOAD_INTERVAL: usize = 60;
 
-// struct block;
-// struct block_builder;
-// struct block_iter;
-
-// /* block */
-
-// struct block *block_init(uint8_t *data, size_t size, bool needs_free);
-// void block_destroy(struct block **);
-
-// struct block_iter *block_iter_init(struct block *);
-// void block_iter_destroy(struct block_iter **);
-// bool block_iter_valid(const struct block_iter *);
-// void block_iter_seek_to_first(struct block_iter *);
-// void block_iter_seek_to_last(struct block_iter *);
-// void block_iter_seek(struct block_iter *, const uint8_t *key, size_t key_len);
-// bool block_iter_next(struct block_iter *);
-// void block_iter_prev(struct block_iter *);
-// bool block_iter_get(struct block_iter *,
-//     const uint8_t **key, size_t *key_len,
-//     const uint8_t **val, size_t *val_len);
-
-// /* block builder */
-
-// struct block_builder *block_builder_init(size_t block_restart_interval);
-// size_t block_builder_current_size_estimate(struct block_builder *);
-// void block_builder_destroy(struct block_builder **);
-// void block_builder_finish(struct block_builder *,
-//     uint8_t **buf, size_t *bufsz);
-// void block_builder_reset(struct block_builder *);
-// void block_builder_add(struct block_builder *,
-//     const uint8_t *key, size_t len_key,
-//     const uint8_t *val, size_t len_val);
-// bool block_builder_empty(struct block_builder *);
-
-// /* compression */
-
-// mtbl_res _mtbl_compress_lz4 (const uint8_t *, const size_t, uint8_t **, size_t *);
-// mtbl_res _mtbl_compress_lz4hc   (const uint8_t *, const size_t, uint8_t **, size_t *, int);
-// mtbl_res _mtbl_compress_snappy  (const uint8_t *, const size_t, uint8_t **, size_t *);
-// mtbl_res _mtbl_compress_zlib    (const uint8_t *, const size_t, uint8_t **, size_t *, int);
-// mtbl_res _mtbl_compress_zstd    (const uint8_t *, const size_t, uint8_t **, size_t *, int);
-
-// mtbl_res _mtbl_decompress_lz4   (const uint8_t *, const size_t, uint8_t **, size_t *);
-// mtbl_res _mtbl_decompress_snappy(const uint8_t *, const size_t, uint8_t **, size_t *);
-// mtbl_res _mtbl_decompress_zlib  (const uint8_t *, const size_t, uint8_t **, size_t *);
-// mtbl_res _mtbl_decompress_zstd  (const uint8_t *, const size_t, uint8_t **, size_t *);
-
-/* iter */
-
-// struct mtbl_iter *
-// mtbl_iter_init(mtbl_iter_seek_func, mtbl_iter_next_func, mtbl_iter_free_func, void *clos);
-
 /* misc */
 
 fn bytes_compare(a: &[u8], b: &[u8]) -> i32 {
@@ -93,24 +45,11 @@ fn bytes_compare(a: &[u8], b: &[u8]) -> i32 {
     }
 }
 
-/* metadata */
-
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u32)]
 pub enum FileVersion {
     FormatV1 = 0,
     FormatV2 = 1,
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-#[repr(u64)]
-pub enum CompressionType {
-    None = 0,
-    Snappy = 1,
-    Zlib = 2,
-    Lz4 = 3,
-    Lz4hc = 4,
-    Zstd = 5,
 }
 
 impl CompressionType {
@@ -177,27 +116,6 @@ impl Metadata {
     }
 }
 
-// void metadata_write(const struct mtbl_metadata *, uint8_t *buf);
-// bool metadata_read(const uint8_t *buf, struct mtbl_metadata *);
-
-// static inline int
-// bytes_compare(const uint8_t *a, size_t len_a,
-//           const uint8_t *b, size_t len_b)
-// {
-//     size_t len = len_a > len_b ? len_b : len_a;
-//     int ret = memcmp(a, b, len);
-//     if (ret == 0) {
-//         if (len_a < len_b) {
-//             return (-1);
-//         } else if (len_a == len_b) {
-//             return (0);
-//         } else if (len_a > len_b) {
-//             return (1);
-//         }
-//     }
-//     return (ret);
-// }
-
 enum ReaderIterType {
     Iter,
     Get,
@@ -215,7 +133,7 @@ pub struct Reader<'a> {
     metadata: Metadata,
     data: &'a [u8],
     opt: ReaderOptions,
-    index: Block<'a>,
+    index: Arc<Block<'a>>,
 }
 
 impl<'a> Reader<'a> {
@@ -264,7 +182,8 @@ impl<'a> Reader<'a> {
         // let index_crc = LittleEndian::read_u32(&data[metadata.index_block_offset as usize + index_len_len..]);
         let index_data = &data[metadata.index_block_offset as usize + index_len_len + mem::size_of::<u32>()..];
         // assert_eq!(index_crc, mtbl_crc32c(index_data, index_len));
-        let index = Block::init(&index_data[..index_len]);
+        let index = Block::init(Cow::Borrowed(&index_data[..index_len]));
+        let index = Arc::new(index);
 
         Ok(Reader { metadata, data, opt, index })
     }
@@ -294,23 +213,12 @@ impl<'a> Reader<'a> {
             // assert(block_crc == calc_crc);
         }
 
-        if self.metadata.compression_algorithm == CompressionType::None {
-            Block::init(&raw_contents[..raw_contents_size])
-        } else {
-            unimplemented!("block decompression");
-            // res = mtbl_decompress(
-            //     r->m.compression_algorithm,
-            //     raw_contents,
-            //     raw_contents_size,
-            //     &block_contents,
-            //     &block_contents_size
-            // );
-            // assert(res == mtbl_res_success);
-            // Block::init(..., true)
-        }
+        let raw_contents = &raw_contents[..raw_contents_size];
+        let data = decompress(self.metadata.compression_algorithm, raw_contents).unwrap();
+        Block::init(data)
     }
 
-    fn block_at_index(&self, index_iter: &BlockIter<'a>) -> Result<Block<'a>, ()> {
+    fn block_at_index<'r>(&self, index_iter: &BlockIter<'a>) -> Result<Block<'a>, ()> {
         match index_iter.get() {
             Some((_key, val)) => {
                 let mut offset = 0;
@@ -335,11 +243,11 @@ pub struct ReaderIter<'r, 'a> {
 
 impl<'r, 'a> ReaderIter<'r, 'a> {
     pub fn new(r: &'r Reader<'a>) -> Result<ReaderIter<'r, 'a>, ()> {
-        let mut index_iter = BlockIter::init(r.index);
+        let mut index_iter = BlockIter::init(r.index.clone());
         index_iter.seek_to_first();
 
         let b = r.block_at_index(&index_iter)?;
-        let mut bi = BlockIter::init(b);
+        let mut bi = BlockIter::init(Arc::new(b));
         bi.seek_to_first();
 
         Ok(ReaderIter {
@@ -355,12 +263,12 @@ impl<'r, 'a> ReaderIter<'r, 'a> {
     }
 
     pub fn new_from(r: &'r Reader<'a>, key: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
-        let mut index_iter = BlockIter::init(r.index);
+        let mut index_iter = BlockIter::init(r.index.clone());
         index_iter.seek(key);
 
         let b = r.block_at_index(&index_iter)?;
+        let mut bi = BlockIter::init(Arc::new(b));
 
-        let mut bi = BlockIter::init(b);
         bi.seek(key);
 
         Ok(ReaderIter {
@@ -418,7 +326,7 @@ impl<'r, 'a> ReaderIter<'r, 'a> {
         if self.block_offset != new_offset {
             self.block_offset = new_offset;
             let b = self.r.block(new_offset as usize);
-            self.bi = BlockIter::init(b);
+            self.bi = BlockIter::init(Arc::new(b));
         }
 
         self.bi.seek(key);
@@ -453,7 +361,7 @@ impl<'r, 'a> ReaderIter<'r, 'a> {
                     return None;
                 }
                 let b = self.r.block_at_index(&self.index_iter).unwrap();
-                self.bi = BlockIter::init(b);
+                self.bi = BlockIter::init(Arc::new(b));
                 self.bi.seek_to_first();
 
                 let entry = self.bi.get();

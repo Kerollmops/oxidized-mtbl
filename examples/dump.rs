@@ -7,10 +7,10 @@ use oxidized_mtbl::{Reader, ReaderIter, ReaderOptions};
 fn main() {
     let path = env::args().nth(1).unwrap();
     let file = File::open(path).unwrap();
-    let mmap = unsafe { Mmap::map(&file).unwrap() };
+    let content = unsafe { Mmap::map(&file).unwrap() };
 
     let options = ReaderOptions::default();
-    let reader = Reader::new(&mmap, options).unwrap();
+    let reader = Reader::new(&content[..], options).unwrap();
 
     let mut iter = ReaderIter::new(&reader).unwrap();
 

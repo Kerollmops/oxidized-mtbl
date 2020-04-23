@@ -1,24 +1,26 @@
+use std::borrow::Cow;
 use std::mem;
+use std::sync::Arc;
 
 use byteorder::{ByteOrder, LittleEndian};
 
 use crate::varint::varint_decode32;
 use crate::bytes_compare;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct Block<'a> {
-    data: &'a [u8],
+    data: Cow<'a, [u8]>,
     restart_offset: u64,
 }
 
 impl<'a> Block<'a> {
-    pub fn init(mut data: &[u8]) -> Block {
+    pub fn init(mut data: Cow<'a, [u8]>) -> Block<'a> {
         let mut restart_offset = 0;
 
         if data.len() < mem::size_of::<u32>() {
-            data = &[];
+            data = Cow::Borrowed(&[]);
         } else {
-            restart_offset = data.len() - (1 + num_restarts(data) as usize) * mem::size_of::<u32>();
+            restart_offset = data.len() - (1 + num_restarts(&data) as usize) * mem::size_of::<u32>();
         }
 
         /*
@@ -29,7 +31,7 @@ impl<'a> Block<'a> {
          */
         if restart_offset > u32::max_value() as usize {
             restart_offset = data.len() - (
-                mem::size_of::<u32>() + num_restarts(data) as usize * mem::size_of::<u64>()
+                mem::size_of::<u32>() + num_restarts(&data) as usize * mem::size_of::<u64>()
             );
             /*
              * b->restart_offset is the offset of the first byte after
@@ -40,12 +42,12 @@ impl<'a> Block<'a> {
              * and a 64 bit restart array would begin before to be malformed.
              */
             if restart_offset <= u32::max_value() as usize {
-                data = &[];
+                data = Cow::Borrowed(&[]);
             }
         }
 
         if restart_offset > data.len() - mem::size_of::<u32>() {
-            data = &[];
+            data = Cow::Borrowed(&[]);
         }
 
         Block { data, restart_offset: restart_offset as u64 }
@@ -58,28 +60,30 @@ fn num_restarts(data: &[u8]) -> u32 {
 }
 
 pub struct BlockIter<'a> {
-    data: &'a [u8],
+    block: Arc<Block<'a>>,
     restarts: u64,
     num_restarts: u32,
     current: u64,
     restart_index: u32,
     next: Option<u64>,
     key: Vec<u8>,
-    val: Option<&'a [u8]>,
+    val: Option<(usize, usize)>,
 }
 
 impl<'a> BlockIter<'a> {
-    pub fn init(b: Block<'a>) -> BlockIter<'a> {
+    pub fn init(b: Arc<Block<'a>>) -> BlockIter<'a> {
         assert!(b.data.len() >= 2 * mem::size_of::<u32>());
 
-        let num_restarts = num_restarts(b.data);
+        let num_restarts = num_restarts(&b.data);
         assert!(num_restarts > 0);
 
+        let restart_offset = b.restart_offset;
+
         BlockIter {
-            data: b.data,
-            restarts: b.restart_offset,
+            block: b,
+            restarts: restart_offset,
             num_restarts,
-            current: b.restart_offset,
+            current: restart_offset,
             restart_index: num_restarts,
             next: None,
             key: Vec::new(),
@@ -92,9 +96,9 @@ impl<'a> BlockIter<'a> {
 
         let offset = self.restarts as usize + idx as usize * mem::size_of::<u32>();
         if self.restarts > u32::max_value() as u64 {
-            LittleEndian::read_u64(&self.data[offset..])
+            LittleEndian::read_u64(&self.block.data[offset..])
         } else {
-            LittleEndian::read_u32(&self.data[offset..]) as u64
+            LittleEndian::read_u32(&self.block.data[offset..]) as u64
         }
     }
 
@@ -123,14 +127,14 @@ impl<'a> BlockIter<'a> {
 
         /* decode next entry */
         let (shared, non_shared, value_length, p) =
-            decode_entry(self.data, self.current as usize, self.restarts as usize).unwrap();
+            decode_entry(&self.block.data, self.current as usize, self.restarts as usize).unwrap();
         assert!(self.key.capacity() >= shared as usize);
 
         self.key.truncate(shared as usize);
-        self.key.extend_from_slice(&self.data[p..p + non_shared as usize]);
+        self.key.extend_from_slice(&self.block.data[p..p + non_shared as usize]);
 
         self.next = Some(p as u64 + non_shared as u64 + value_length as u64);
-        self.val = Some(&self.data[p + non_shared as usize.. p + non_shared as usize + value_length as usize]);
+        self.val = Some((p + non_shared as usize, value_length as usize));
         while self.restart_index + 1 < self.num_restarts && self.restart_point(self.restart_index + 1) < self.current {
             self.restart_index += 1;
         }
@@ -157,14 +161,14 @@ impl<'a> BlockIter<'a> {
             let region_offset = self.restart_point(mid);
 
             let (shared, non_shared, _value_length, key_offset) =
-                decode_entry(self.data, region_offset as usize, self.restarts as usize).unwrap();
+                decode_entry(&self.block.data, region_offset as usize, self.restarts as usize).unwrap();
 
             if shared != 0 {
                 // corruption
                 return;
             }
 
-            let key = &self.data[key_offset..key_offset + non_shared as usize];
+            let key = &self.block.data[key_offset..key_offset + non_shared as usize];
             if bytes_compare(key, target) < 0 {
                 // key at "mid" is smaller than "target", therefore all
                 // keys before "mid" are uninteresting
@@ -202,9 +206,9 @@ impl<'a> BlockIter<'a> {
         }
 
         let key = self.key.as_slice();
-        let val = self.val.unwrap();
+        let (val_offset, val_len) = self.val.unwrap();
 
-        return Some((key, val));
+        return Some((key, &self.block.data[val_offset..val_offset + val_len]));
     }
 }
 
