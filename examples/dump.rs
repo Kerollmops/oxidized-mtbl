@@ -2,7 +2,7 @@ use std::{env, str};
 use std::fs::File;
 
 use memmap::Mmap;
-use oxidized_mtbl::{Reader, ReaderIter, ReaderOptions};
+use oxidized_mtbl::{Reader, ReaderOptions};
 
 fn main() {
     let path = env::args().nth(1).unwrap();
@@ -12,7 +12,7 @@ fn main() {
     let options = ReaderOptions::default();
     let reader = Reader::new(&content[..], options).unwrap();
 
-    let mut iter = ReaderIter::new(&reader).unwrap();
+    let mut iter = reader.iter().unwrap();
 
     while let Some((key, val)) = iter.next() {
         let key = str::from_utf8(key).unwrap();

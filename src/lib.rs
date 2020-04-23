@@ -168,6 +168,26 @@ impl<'a> Reader<'a> {
         Ok(Reader { metadata, data, opt, index })
     }
 
+    pub fn get<'r>(&'r self, key: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
+        ReaderIter::new_get(self, key)
+    }
+
+    pub fn iter<'r>(&'r self) -> Result<ReaderIter<'r, 'a>, ()> {
+        ReaderIter::new(self)
+    }
+
+    pub fn iter_from<'r>(&'r self, start: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
+        ReaderIter::new_from(self, start)
+    }
+
+    pub fn iter_prefix<'r>(&'r self, prefix: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
+        ReaderIter::new_get_prefix(self, prefix)
+    }
+
+    pub fn iter_range<'r>(&'r self, start: &[u8], end: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
+        ReaderIter::new_get_range(self, start, end)
+    }
+
     fn block(&self, offset: usize) -> Block<'a> {
         assert!(offset < self.data.len());
 
@@ -222,7 +242,7 @@ pub struct ReaderIter<'r, 'a> {
 }
 
 impl<'r, 'a> ReaderIter<'r, 'a> {
-    pub fn new(r: &'r Reader<'a>) -> Result<ReaderIter<'r, 'a>, ()> {
+    fn new(r: &'r Reader<'a>) -> Result<ReaderIter<'r, 'a>, ()> {
         let mut index_iter = BlockIter::init(r.index.clone());
         index_iter.seek_to_first();
 
@@ -242,7 +262,7 @@ impl<'r, 'a> ReaderIter<'r, 'a> {
         })
     }
 
-    pub fn new_from(r: &'r Reader<'a>, key: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
+    fn new_from(r: &'r Reader<'a>, key: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
         let mut index_iter = BlockIter::init(r.index.clone());
         index_iter.seek(key);
 
@@ -263,21 +283,21 @@ impl<'r, 'a> ReaderIter<'r, 'a> {
         })
     }
 
-    pub fn new_get(r: &'r Reader<'a>, key: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
+    fn new_get(r: &'r Reader<'a>, key: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
         let mut iter = ReaderIter::new_from(r, key)?;
         iter.k.extend_from_slice(key);
         iter.it_type = ReaderIterType::Get;
         Ok(iter)
     }
 
-    pub fn new_get_prefix(r: &'r Reader<'a>, prefix: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
+    fn new_get_prefix(r: &'r Reader<'a>, prefix: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
         let mut iter = ReaderIter::new_from(r, prefix)?;
         iter.k.extend_from_slice(prefix);
         iter.it_type = ReaderIterType::GetPrefix;
         Ok(iter)
     }
 
-    pub fn new_get_range(r: &'r Reader<'a>, start: &[u8], end: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
+    fn new_get_range(r: &'r Reader<'a>, start: &[u8], end: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
         let mut iter = ReaderIter::new_from(r, start)?;
         iter.k.extend_from_slice(end);
         iter.it_type = ReaderIterType::GetRange;
