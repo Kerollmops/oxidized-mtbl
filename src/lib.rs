@@ -12,29 +12,9 @@ mod block;
 mod compression;
 mod varint;
 
-// #include "mtbl.h"
-
-// #include "libmy/my_alloc.h"
-// #include "libmy/my_byteorder.h"
-
 const MTBL_MAGIC_V1: u32 = 0x77846676;
 const MTBL_MAGIC: u32 = 0x4D54424C;
 const MTBL_METADATA_SIZE: usize = 512;
-
-// const DEFAULT_COMPRESSION_TYPE: usize = MTBL_COMPRESSION_ZLIB;
-// const DEFAULT_COMPRESSION_LEVEL: usize = -10000;
-const DEFAULT_BLOCK_RESTART_INTERVAL: usize = 16;
-const DEFAULT_BLOCK_SIZE: usize = 8192;
-const MIN_BLOCK_SIZE: usize = 1024;
-
-// const DEFAULT_SORTER_TEMP_DIR: usize = "/var/tmp";
-const DEFAULT_SORTER_MEMORY: usize = 1073741824;
-const MIN_SORTER_MEMORY: usize = 10485760;
-const INITIAL_SORTER_VEC_SIZE: usize = 131072;
-
-const DEFAULT_FILESET_RELOAD_INTERVAL: usize = 60;
-
-/* misc */
 
 fn bytes_compare(a: &[u8], b: &[u8]) -> i32 {
     use std::cmp::Ordering;
@@ -312,7 +292,7 @@ impl<'r, 'a> ReaderIter<'r, 'a> {
             None => {
                 // This seek puts us after the last key, so we mark the
                 // iterator as invalid and return success. The next
-                // mtbl_iter_next() operation will return mtbl_res_failure.
+                // next() operation will return false.
                 self.valid = false;
                 return true;
             }
