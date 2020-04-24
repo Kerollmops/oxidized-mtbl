@@ -159,10 +159,15 @@ impl<'a> Reader<'a> {
             }
         }
 
-        // let index_crc = LittleEndian::read_u32(&data[metadata.index_block_offset as usize + index_len_len..]);
         let index_data = &data[metadata.index_block_offset as usize + index_len_len + mem::size_of::<u32>()..];
-        // assert_eq!(index_crc, mtbl_crc32c(index_data, index_len));
-        let index = Block::init(Cow::Borrowed(&index_data[..index_len]));
+        let index_data = &index_data[..index_len];
+
+        if opt.verify_checksums {
+            let index_crc = LittleEndian::read_u32(&data[metadata.index_block_offset as usize + index_len_len..]);
+            assert_eq!(index_crc, crc32c::crc32c(index_data));
+        }
+
+        let index = Block::init(Cow::Borrowed(index_data));
         let index = Arc::new(index);
 
         Ok(Reader { metadata, data, opt, index })
@@ -204,16 +209,14 @@ impl<'a> Reader<'a> {
             assert_eq!(raw_contents_size as u64, tmp);
         }
         let raw_contents = &self.data[offset + raw_contents_size_len + mem::size_of::<u32>()..];
+        let raw_contents = &raw_contents[..raw_contents_size];
 
         if self.opt.verify_checksums {
-            unimplemented!("checksums verification");
-            // uint32_t block_crc, calc_crc;
-            // block_crc = mtbl_fixed_decode32(&r->data[offset + raw_contents_size_len]);
-            // calc_crc = mtbl_crc32c(raw_contents, raw_contents_size);
-            // assert(block_crc == calc_crc);
+            let block_crc = LittleEndian::read_u32(&self.data[offset + raw_contents_size_len..]);
+            let calc_crc = crc32c::crc32c(raw_contents);
+            assert_eq!(block_crc, calc_crc);
         }
 
-        let raw_contents = &raw_contents[..raw_contents_size];
         let data = decompress(self.metadata.compression_algorithm, raw_contents).unwrap();
         Block::init(data)
     }
