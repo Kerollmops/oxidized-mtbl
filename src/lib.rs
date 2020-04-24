@@ -117,12 +117,6 @@ pub struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    pub fn metadata(&self) -> &Metadata {
-        &self.metadata
-    }
-}
-
-impl<'a> Reader<'a> {
     pub fn new(data: &'a [u8], opt: ReaderOptions) -> Result<Reader<'a>, ()> {
         if data.len() < MTBL_METADATA_SIZE {
             return Err(())
@@ -173,8 +167,14 @@ impl<'a> Reader<'a> {
         Ok(Reader { metadata, data, opt, index })
     }
 
-    pub fn get<'r>(&'r self, key: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
-        ReaderIter::new_get(self, key)
+    pub fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
+    pub fn get<'r>(&'r self, key: &[u8]) -> Result<ReaderGet<'a>, ()> {
+        let mut iter = ReaderIter::new_get(self, key)?;
+        iter.next().ok_or(())?;
+        Ok(ReaderGet::new(iter.bi))
     }
 
     pub fn iter<'r>(&'r self) -> Result<ReaderIter<'r, 'a>, ()> {
@@ -230,6 +230,29 @@ impl<'a> Reader<'a> {
             },
             None => Err(()),
         }
+    }
+}
+
+pub struct ReaderGet<'a> {
+    block: Arc<Block<'a>>,
+    val_offset: usize,
+    val_len: usize,
+}
+
+impl<'a> ReaderGet<'a> {
+    fn new(block_iter: BlockIter<'a>) -> ReaderGet<'a> {
+        let (offset, length) = block_iter.val.unwrap();
+        ReaderGet {
+            block: block_iter.block,
+            val_offset: offset,
+            val_len: length,
+        }
+    }
+}
+
+impl AsRef<[u8]> for ReaderGet<'_> {
+    fn as_ref(&self) -> &[u8] {
+        &(*self.block).as_ref()[self.val_offset..self.val_offset + self.val_len]
     }
 }
 

@@ -50,20 +50,26 @@ impl<'a> Block<'a> {
     }
 }
 
+impl AsRef<[u8]> for Block<'_> {
+    fn as_ref(&self) -> &[u8] {
+        &self.data
+    }
+}
+
 fn num_restarts(data: &[u8]) -> u32 {
     assert!(data.len() >= 2 * mem::size_of::<u32>());
     LittleEndian::read_u32(&data[data.len() - mem::size_of::<u32>()..])
 }
 
 pub struct BlockIter<'a> {
-    block: Arc<Block<'a>>,
+    pub(crate) block: Arc<Block<'a>>,
     restarts: u64,
     num_restarts: u32,
     current: u64,
     restart_index: u32,
     next: Option<u64>,
-    key: Vec<u8>,
-    val: Option<(usize, usize)>,
+    pub(crate) key: Vec<u8>,
+    pub(crate) val: Option<(usize, usize)>,
 }
 
 impl<'a> BlockIter<'a> {
