@@ -4,10 +4,12 @@ use std::sync::Arc;
 
 use byteorder::{ByteOrder, LittleEndian};
 
+use error::Error;
 use block::{Block, BlockIter};
 use varint::varint_decode64;
 use compression::{CompressionType, decompress};
 
+mod error;
 mod block;
 mod compression;
 mod varint;
@@ -61,19 +63,19 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    fn read_from_bytes(bytes: &[u8]) -> Result<Metadata, ()> {
+    fn read_from_bytes(bytes: &[u8]) -> Result<Metadata, Error> {
         let magic = LittleEndian::read_u32(&bytes[MTBL_METADATA_SIZE - mem::size_of::<u32>()..]);
         let file_version = match magic {
             MTBL_MAGIC_V1 => FileVersion::FormatV1,
             MTBL_MAGIC => FileVersion::FormatV2,
-            _ => return Err(()),
+            _ => return Err(Error::InvalidFormatVersion),
         };
 
         let mut b = bytes;
         let index_block_offset = LittleEndian::read_u64(b); b = &b[8..];
         let data_block_size = LittleEndian::read_u64(b); b = &b[8..];
         let compression_algorithm = LittleEndian::read_u64(b); b = &b[8..];
-        let compression_algorithm = CompressionType::from_u64(compression_algorithm).ok_or(())?;
+        let compression_algorithm = CompressionType::from_u64(compression_algorithm).ok_or(Error::InvalidCompressionAlgorithm)?;
         let count_entries = LittleEndian::read_u64(b); b = &b[8..];
         let count_data_blocks = LittleEndian::read_u64(b); b = &b[8..];
         let bytes_data_blocks = LittleEndian::read_u64(b); b = &b[8..];
@@ -117,9 +119,9 @@ pub struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    pub fn new(data: &'a [u8], _opt: ReaderOptions) -> Result<Reader<'a>, ()> {
+    pub fn new(data: &'a [u8], _opt: ReaderOptions) -> Result<Reader<'a>, Error> {
         if data.len() < MTBL_METADATA_SIZE {
-            return Err(())
+            return Err(Error::InvalidMetadataSize)
         }
 
         let metadata_offset = data.len() - MTBL_METADATA_SIZE;
@@ -133,7 +135,7 @@ impl<'a> Reader<'a> {
         // sized block, which requires 4 fixed-length 32-bit integers (16 bytes).
         let max_index_block_offset = (data.len() - MTBL_METADATA_SIZE - 16) as u64;
         if metadata.index_block_offset > max_index_block_offset {
-            return Err(());
+            return Err(Error::InvalidIndexBlockOffset);
         }
 
         // reader_init_madvise(r);
@@ -149,7 +151,7 @@ impl<'a> Reader<'a> {
             index_len_len = varint_decode64(&data[metadata.index_block_offset as usize..], &mut tmp);
             index_len = tmp as usize;
             if index_len as u64 != tmp {
-                return Err(());
+                return Err(Error::InvalidIndexLength);
             }
         }
 
