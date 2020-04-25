@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::io::{self, Read};
+use std::io;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u64)]
@@ -27,16 +27,15 @@ pub fn decompress(type_: CompressionType, data: &[u8]) -> io::Result<Cow<[u8]>> 
 
 #[cfg(feature = "zlib")]
 fn zlib_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
-    use flate2::read::ZlibDecoder;
-
-    let mut decoder = ZlibDecoder::new(data);
+    use std::io::Read;
+    let mut decoder = flate2::read::ZlibDecoder::new(data);
     let mut buffer = Vec::new();
     decoder.read_to_end(&mut buffer)?;
     Ok(Cow::Owned(buffer))
 }
 
 #[cfg(not(feature = "zlib"))]
-fn zlib_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
+fn zlib_decompress(_data: &[u8]) -> io::Result<Cow<[u8]>> {
     Err(io::Error::new(io::ErrorKind::Other, "unsupported zlib decompression"))
 }
 
@@ -47,7 +46,7 @@ fn snappy_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
 }
 
 #[cfg(not(feature = "snappy"))]
-fn snappy_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
+fn snappy_decompress(_data: &[u8]) -> io::Result<Cow<[u8]>> {
     Err(io::Error::new(io::ErrorKind::Other, "unsupported snappy decompression"))
 }
 
@@ -59,6 +58,6 @@ fn zstd_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
 }
 
 #[cfg(not(feature = "zstd"))]
-fn zstd_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
+fn zstd_decompress(_data: &[u8]) -> io::Result<Cow<[u8]>> {
     Err(io::Error::new(io::ErrorKind::Other, "unsupported zstd decompression"))
 }

@@ -112,12 +112,12 @@ pub struct ReaderOptions {
 pub struct Reader<'a> {
     metadata: Metadata,
     data: &'a [u8],
-    opt: ReaderOptions,
+    _opt: ReaderOptions,
     index: Arc<Block<'a>>,
 }
 
 impl<'a> Reader<'a> {
-    pub fn new(data: &'a [u8], opt: ReaderOptions) -> Result<Reader<'a>, ()> {
+    pub fn new(data: &'a [u8], _opt: ReaderOptions) -> Result<Reader<'a>, ()> {
         if data.len() < MTBL_METADATA_SIZE {
             return Err(())
         }
@@ -156,15 +156,16 @@ impl<'a> Reader<'a> {
         let index_data = &data[metadata.index_block_offset as usize + index_len_len + mem::size_of::<u32>()..];
         let index_data = &index_data[..index_len];
 
-        if opt.verify_checksums {
+        #[cfg(feature = "checksum")] {
+        if _opt.verify_checksums {
             let index_crc = LittleEndian::read_u32(&data[metadata.index_block_offset as usize + index_len_len..]);
             assert_eq!(index_crc, crc32c::crc32c(index_data));
-        }
+        } }
 
         let index = Block::init(Cow::Borrowed(index_data));
         let index = Arc::new(index);
 
-        Ok(Reader { metadata, data, opt, index })
+        Ok(Reader { metadata, data, _opt, index })
     }
 
     pub fn metadata(&self) -> &Metadata {
@@ -211,11 +212,12 @@ impl<'a> Reader<'a> {
         let raw_contents = &self.data[offset + raw_contents_size_len + mem::size_of::<u32>()..];
         let raw_contents = &raw_contents[..raw_contents_size];
 
-        if self.opt.verify_checksums {
+        #[cfg(feature = "checksum")] {
+        if self._opt.verify_checksums {
             let block_crc = LittleEndian::read_u32(&self.data[offset + raw_contents_size_len..]);
             let calc_crc = crc32c::crc32c(raw_contents);
             assert_eq!(block_crc, calc_crc);
-        }
+        } }
 
         let data = decompress(self.metadata.compression_algorithm, raw_contents).unwrap();
         Block::init(data)
