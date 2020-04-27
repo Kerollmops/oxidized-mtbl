@@ -13,6 +13,8 @@ mod error;
 mod block;
 mod compression;
 mod varint;
+mod writer;
+mod block_builder;
 
 const MTBL_MAGIC_V1: u32 = 0x77846676;
 const MTBL_MAGIC: u32 = 0x4D54424C;
