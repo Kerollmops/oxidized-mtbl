@@ -28,6 +28,11 @@ pub fn varint_decode32(data: &[u8], value: &mut u32) -> usize {
     len as usize
 }
 
+pub fn varint_encode64(_bytes: &mut [u8], _value: i64) {
+    unimplemented!()
+}
+
+
 pub fn varint_decode64(data: &[u8], value: &mut u64) -> usize {
     let len = varint_length_packed(&data[..data.len().min(10)]);
     if len < 5 {

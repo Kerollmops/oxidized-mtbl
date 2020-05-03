@@ -2,17 +2,17 @@ use crate::compression::CompressionType;
 use crate::Metadata;
 use crate::block_builder::BlockBuilder;
 use crate::FileVersion;
+use crate::compression::{compress_level, compress};
+use crate::varint::varint_encode64;
 
-use std::os::unix::io::{ AsRawFd, RawFd };
-use std::os::unix::fs::PermissionsExt;
-use std::fs::OpenOptions;
-use nix::unistd::{dup, lseek, Whence};
-
+use std::io::Write;
+use std::fs::File;
 
 const DEFAULT_COMPRESSION_TYPE: CompressionType = CompressionType::None;
 const DEFAULT_COMPRESSION_LEVEL: i32 = -10_000;
 const DEFAULT_BLOCK_SIZE: u64 = 8192;
 const DEFAULT_BLOCK_RESTART_INTERVAL: usize = 16;
+const METADATA_SIZE: usize = 512;
             
 pub struct WriterOptions {
     compression_type: CompressionType,
@@ -23,16 +23,16 @@ pub struct WriterOptions {
 
 
 pub struct Writer {
-    fd: RawFd,
+    file: File,
     m: Metadata,
     data: BlockBuilder, 
     index: BlockBuilder, 
     opt: WriterOptions,
     last_key: Vec<u8>,
-    last_offset: i64,
+    last_offset: u64,
     closed: bool,
     pending_index_entry: bool,
-    pending_offset: i64,
+    pending_offset: u64,
 }
 
 impl WriterOptions {
@@ -65,23 +65,12 @@ impl WriterOptions {
 impl Writer {
 
     pub fn new(filename: &str, options: WriterOptions) -> Option<Self> {
-        OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(filename)
-            .map(|mut f| {
-                f.metadata()
-                    .unwrap()
-                    .permissions()
-                    .set_mode(0o644); f
-            })
-            .map(|f| Self::init_fd(f.as_raw_fd(), Some(options)))
-            .ok()
+        File::create(filename).map(|f| Self::init_fd(f, Some(options))).ok()
     }
 
-    pub fn init_fd(orig_fd: RawFd, options: Option<WriterOptions>) -> Self {
-        let fd =  dup(orig_fd).unwrap();
+    pub fn init_fd(file: File, options: Option<WriterOptions>) -> Self {
+
+        let file = file.try_clone().expect("error cloning the file");
 
         let opt = match options {
             Some(opt) => opt,
@@ -103,10 +92,11 @@ impl Writer {
             bytes_values: 0,
         };
 
-        let last_offset = lseek(fd, 0, Whence::SeekCur).unwrap();
+        use std::io::{Seek, SeekFrom};
+        let last_offset = file.seek(SeekFrom::Start(0)).expect("error seeking file");
         let block_restart_interval = opt.block_restart_interval;
         Self {
-            fd,
+            file,
             m,
             opt,
             last_offset,
@@ -119,7 +109,7 @@ impl Writer {
         }
     }
 
-    pub fn add(&self, key: &[u8], val: &[u8]) -> Result<(), ()> {
+    pub fn add(&mut self, key: &[u8], val: &[u8]) -> Result<(), ()> {
 
         if self.closed { panic!("writer is closed!") }
         if self.m.count_entries > 0 {
@@ -135,25 +125,79 @@ impl Writer {
         }
 
         if self.pending_index_entry {
-            let enc = [0; 10];
+            let mut enc = [0; 10];
             assert!(!self.data.is_emtpy());
             bytes_shortest_separator(&self.last_key, key);
+            varint_encode64(&mut enc, self.last_offset as i64);
 
+            self.index.add(&self.last_key, &enc);
+            self.pending_index_entry = false;
         }
-        unimplemented!()
-
+        self.last_key.clear();
+        self.last_key.extend_from_slice(key);
+        self.m.count_entries += 1;
+        self.m.bytes_keys += key.len() as u64;
+        self.m.bytes_values += val.len() as u64;
+        self.data.add(key, val);
+        Ok(())
     }
 
-    pub fn finish(&self) {
-        unimplemented!()
+    fn finish(&mut self) {
+        let mut buf = [0; METADATA_SIZE];
+        self.flush();
+        assert!(!self.closed);
+        self.closed = true;
+        if self.pending_index_entry {
+            let mut enc = [0; 10];
+            varint_encode64(&mut enc, self.last_offset as i64);
+            self.index.add(&self.last_key, &enc);
+            self.pending_index_entry = false;
+        }
+        self.m.index_block_offset = self.pending_offset as u64;
+        self.m.bytes_index_block = self.write_block(&self.index, CompressionType::None) as u64;
     }
 
-    pub fn flush(&self) {
-        unimplemented!()
+    fn flush(&mut self) {
+        assert!(!self.closed);
+        if self.data.is_emtpy() {
+            return 
+        }
+        assert!(!self.pending_index_entry);
+        self.m.bytes_data_blocks += self.write_block(&self.data, self.opt.compression_type) as u64;
+        self.m.count_data_blocks += 1;
+        self.pending_index_entry = true;
     }
 
-    pub fn write_block(&self, block: &BlockBuilder, compression_type: CompressionType) -> Result<usize, ()> {
-        unimplemented!()
+    pub fn write_block(&self, block: &mut BlockBuilder, compression_type: CompressionType) -> usize {
+
+        let raw_content = block.finish();
+
+        let block_content = if compression_type == CompressionType::None {
+           raw_content 
+        } else if self.opt.compression_level == DEFAULT_COMPRESSION_LEVEL {
+            compress(compression_type, &raw_content).expect("error compressing block")
+        } else {
+            compress_level(compression_type, self.opt.compression_level, &raw_content).expect("error compressing block")
+        };
+
+        assert!(self.m.file_version == FileVersion::FormatV2);
+
+        let crc = crc32c::crc32c(&block_content).to_le_bytes();
+
+        let mut len = [0; 10];
+        varint_encode64(&mut len, block_content.len() as i64);
+        self.file.write_all(&len).expect("write failed");
+        // already performed conversion before...
+        self.file.write_all(&crc).expect("write failed");
+        self.file.write_all(&block_content).expect("write failed");
+
+        let bytes_written = len.len() + crc.len() + block_content.len();
+
+        self.last_offset = self.pending_offset;
+        self.pending_offset += bytes_written as u64;
+
+        block.reset();
+        return bytes_written
     }
 }
 

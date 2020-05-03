@@ -61,3 +61,12 @@ fn zstd_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
 fn zstd_decompress(_data: &[u8]) -> io::Result<Cow<[u8]>> {
     Err(io::Error::new(io::ErrorKind::Other, "unsupported zstd decompression"))
 }
+
+pub fn compress(compression_type: CompressionType, input: &[u8]) -> Result<Vec<u8>, ()> {
+    unimplemented!()
+}
+
+pub fn compress_level(compression_type: CompressionType, compress_level: i32, input: &[u8]) -> io::Result<Vec<u8>> {
+    unimplemented!()
+}
+

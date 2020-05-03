@@ -40,6 +40,13 @@ impl BlockBuilder {
         unimplemented!()
     }
 
+    pub fn add(&mut self, key: &[u8], val: &[u8]) {
+        unimplemented!()
+    }
+    pub fn finish(&self) -> Vec<u8> {
+        unimplemented!()
+    }
+
     //pub fn block_builder_finish(&self, uint8_t **buf, bufsz: &[usize]){
     //}
 }
