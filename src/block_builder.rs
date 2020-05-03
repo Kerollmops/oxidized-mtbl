@@ -40,7 +40,7 @@ impl BlockBuilder {
         unimplemented!()
     }
 
-    pub fn add(&mut self, key: &[u8], val: &[u8]) {
+    pub fn add(&mut self, _key: &[u8], _val: &[u8]) {
         unimplemented!()
     }
     pub fn finish(&self) -> Vec<u8> {

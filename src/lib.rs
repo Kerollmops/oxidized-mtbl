@@ -51,6 +51,7 @@ impl CompressionType {
 }
 
 #[derive(Debug)]
+#[repr(C)]
 pub struct Metadata {
     pub file_version: FileVersion,
     pub index_block_offset: u64,
@@ -97,6 +98,11 @@ impl Metadata {
             bytes_keys,
             bytes_values,
         })
+    }
+    
+    pub fn as_bytes<'a>(&'a self) -> &'a [u8] {
+        let ptr = self as *const _ as *const u8;
+        unsafe { std::slice::from_raw_parts(ptr, std::mem::size_of::<Self>()) } 
     }
 }
 

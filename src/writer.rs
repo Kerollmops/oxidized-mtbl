@@ -49,15 +49,15 @@ impl WriterOptions {
         self.compression_type = compression_type;
     }
 
-    pub fn set_compression_level(&mut self, level: i32) {
+    pub fn set_compression_level(&mut self, _level: i32) {
         unimplemented!()
     }
 
-    pub fn set_block_size(&mut self, bs: usize) {
+    pub fn set_block_size(&mut self, _bs: usize) {
         unimplemented!()
     }
 
-    pub fn set_block_restart_interval(&mut self, interval: usize) {
+    pub fn set_block_restart_interval(&mut self, _interval: usize) {
         unimplemented!()
     }
 }
@@ -70,7 +70,7 @@ impl Writer {
 
     pub fn init_fd(file: File, options: Option<WriterOptions>) -> Self {
 
-        let file = file.try_clone().expect("error cloning the file");
+        let mut file = file.try_clone().expect("error cloning the file");
 
         let opt = match options {
             Some(opt) => opt,
@@ -143,7 +143,6 @@ impl Writer {
     }
 
     fn finish(&mut self) {
-        let mut buf = [0; METADATA_SIZE];
         self.flush();
         assert!(!self.closed);
         self.closed = true;
@@ -155,6 +154,9 @@ impl Writer {
         }
         self.m.index_block_offset = self.pending_offset as u64;
         self.m.bytes_index_block = self.write_block(&self.index, CompressionType::None) as u64;
+        self.index.reset();
+        let meta_bytes = self.m.as_bytes();
+        self.file.write_all(meta_bytes);
     }
 
     fn flush(&mut self) {
@@ -163,12 +165,14 @@ impl Writer {
             return 
         }
         assert!(!self.pending_index_entry);
+        // do something about double borrow.
         self.m.bytes_data_blocks += self.write_block(&self.data, self.opt.compression_type) as u64;
+        self.data.reset();
         self.m.count_data_blocks += 1;
         self.pending_index_entry = true;
     }
 
-    pub fn write_block(&self, block: &mut BlockBuilder, compression_type: CompressionType) -> usize {
+    pub fn write_block(&mut self, block: &BlockBuilder, compression_type: CompressionType) -> usize {
 
         let raw_content = block.finish();
 
@@ -196,12 +200,11 @@ impl Writer {
         self.last_offset = self.pending_offset;
         self.pending_offset += bytes_written as u64;
 
-        block.reset();
         return bytes_written
     }
 }
 
 
-pub fn bytes_shortest_separator(start: &[u8], limit: &[u8]) {
+pub fn bytes_shortest_separator(_start: &[u8], _limit: &[u8]) {
     unimplemented!()
 }
