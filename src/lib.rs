@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use byteorder::{ByteOrder, LittleEndian};
 
-use error::Error;
+pub use error::Error;
 use block::{Block, BlockIter};
 use varint::varint_decode64;
 use compression::{CompressionType, decompress};
