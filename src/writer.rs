@@ -1,6 +1,3 @@
-use std::borrow::Cow;
-use std::fs::File;
-use std::io::Write;
 use std::{cmp, io};
 
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
@@ -59,8 +56,8 @@ impl Default for WriterOptions {
     }
 }
 
-pub struct Writer {
-    file: File,
+pub struct Writer<W> {
+    writer: W,
     metadata: Metadata,
     data: BlockBuilder,
     index: BlockBuilder,
@@ -72,12 +69,8 @@ pub struct Writer {
     pending_offset: u64,
 }
 
-impl Writer {
-    pub fn new(filename: &str, options: WriterOptions) -> Option<Self> {
-        File::create(filename).map(|f| Self::init_fd(f, Some(options))).ok()
-    }
-
-    pub fn init_fd(mut file: File, options: Option<WriterOptions>) -> Self {
+impl<W: io::Write> Writer<W> {
+    pub fn new(writer: W, options: Option<WriterOptions>) -> io::Result<Self> {
         let opt = options.unwrap_or_default();
 
         // derive defaut eventually
@@ -87,12 +80,10 @@ impl Writer {
             ..Metadata::default()
         };
 
-        // TODO we must get rid of seeking
-        use std::io::{Seek, SeekFrom};
-        let last_offset = file.seek(SeekFrom::Current(0)).expect("error seeking file");
+        let last_offset = 0;
 
-        Self {
-            file,
+        Ok(Writer {
+            writer,
             metadata,
             opt,
             last_offset,
@@ -102,7 +93,7 @@ impl Writer {
             index: BlockBuilder::new(opt.block_restart_interval),
             pending_index_entry: false,
             closed: false,
-        }
+        })
     }
 
     pub fn add(&mut self, key: &[u8], val: &[u8]) -> io::Result<()> {
@@ -144,7 +135,7 @@ impl Writer {
         Ok(())
     }
 
-    fn finish(&mut self) -> io::Result<()> {
+    pub fn finish(&mut self) -> io::Result<()> {
         self.flush()?;
 
         assert!(!self.closed);
@@ -165,7 +156,7 @@ impl Writer {
         let mut tbuf = [0u8; METADATA_SIZE];
         let meta_bytes = self.metadata.as_bytes();
         tbuf[..meta_bytes.len()].copy_from_slice(meta_bytes);
-        self.file.write_all(&tbuf)
+        self.writer.write_all(&tbuf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -192,10 +183,10 @@ impl Writer {
 
         let mut len = [0; 10];
         let len_length = varint_encode64(&mut len, block_content.len() as i64);
-        self.file.write_all(&len[..len_length])?;
+        self.writer.write_all(&len[..len_length])?;
         // already performed conversion before...
-        self.file.write_all(&crc)?;
-        self.file.write_all(&block_content)?;
+        self.writer.write_all(&crc)?;
+        self.writer.write_all(&block_content)?;
 
         let bytes_written = len_length + crc.len() + block_content.len();
 
