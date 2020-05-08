@@ -7,7 +7,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use crate::block::{Block, BlockIter};
 use crate::compression::decompress;
 use crate::error::Error;
-use crate::MTBL_METADATA_SIZE;
+use crate::metadata::MTBL_METADATA_SIZE;
 use crate::varint::varint_decode64;
 use crate::{bytes_compare, Metadata, FileVersion};
 

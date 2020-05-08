@@ -74,11 +74,9 @@ impl<W: io::Write> Writer<W> {
         let opt = options.unwrap_or_default();
 
         // derive defaut eventually
-        let metadata = Metadata {
-            data_block_size: opt.block_size,
-            compression_algorithm: opt.compression_type,
-            ..Metadata::default()
-        };
+        let mut metadata = Metadata::default();
+        metadata.data_block_size = opt.block_size;
+        metadata.compression_algorithm = opt.compression_type;
 
         let last_offset = 0;
 
