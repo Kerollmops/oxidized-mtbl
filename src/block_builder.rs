@@ -44,8 +44,43 @@ impl BlockBuilder {
         }
     }
 
-    pub fn add(&mut self, _key: &[u8], _val: &[u8]) {
-        unimplemented!()
+    pub fn add(&mut self, key: &[u8], val: &[u8]) {
+        assert!(self.counter <= self.block_restart_interval);
+        assert!(self.finished == false);
+
+        let mut shared = 0;
+
+        // see how much sharing to do with previous key
+        if self.counter < self.block_restart_interval {
+            let min_length = if self.last_key.len() > key.len() { key.len() } else { self.last_key.len() };
+            for (l, k) in self.last_key.iter().zip(key) {
+                if shared >= min_length || l != k { break }
+                shared += 1;
+            }
+        } else {
+            // restart compression
+            self.restarts.push(self.buf.len() as u64);
+            self.counter = 0;
+        }
+
+        let non_shared = key.len() - shared;
+
+        // ensure enough buffer space is available
+        self.buf.reserve(5 * 3 + key.len() + val.len());
+
+        // add "[shared][non-shared][value length]" to buffer
+        let _ = LittleEndian::write_u32(&mut self.buf, shared as u32);
+        let _ = LittleEndian::write_u32(&mut self.buf, non_shared as u32);
+        let _ = LittleEndian::write_u32(&mut self.buf, val.len() as u32);
+
+        // add key suffix to buffer followed by value
+        self.buf.extend_from_slice(&key[shared..shared + non_shared]);
+        self.buf.extend_from_slice(val);
+
+        // update state
+        self.last_key.clear();
+        self.last_key.extend_from_slice(key);
+        self.counter += 1;
     }
 
     pub fn finish(&mut self) -> Vec<u8> {
@@ -68,7 +103,4 @@ impl BlockBuilder {
         self.finished = true;
         mem::replace(&mut self.buf, Vec::with_capacity(65536))
     }
-
-    //pub fn block_builder_finish(&self, uint8_t **buf, bufsz: &[usize]){
-    //}
 }
