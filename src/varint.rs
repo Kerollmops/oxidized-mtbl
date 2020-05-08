@@ -9,6 +9,37 @@ pub fn varint_length_packed(data: &[u8]) -> u32 {
     if i == data.len() { 0 } else { i as u32 + 1 }
 }
 
+pub fn varint_encode32(bytes: &mut [u8], value: u32) -> usize {
+    let b = 128;
+
+    if value < (1 << 7) {
+        bytes[0] = value as u8;
+        1
+    } else if value < (1 << 14) {
+        bytes[0] = (value | b) as u8;
+        bytes[1] = (value >> 7) as u8;
+        2
+    } else if value < (1 << 21) {
+        bytes[0] = (value | b) as u8;
+        bytes[1] = ((value >> 7) | b) as u8;
+        bytes[2] = (value >> 14) as u8;
+        3
+    } else if value < (1 << 28) {
+        bytes[0] = (value | b) as u8;
+        bytes[1] = ((value >> 7) | b) as u8;
+        bytes[2] = ((value >> 14) | b) as u8;
+        bytes[3] = (value >> 21) as u8;
+        4
+    } else {
+        bytes[0] = (value | b) as u8;
+        bytes[1] = ((value >> 7) | b) as u8;
+        bytes[2] = ((value >> 14) | b) as u8;
+        bytes[3] = ((value >> 21) | b) as u8;
+        bytes[4] = (value >> 28) as u8;
+        5
+    }
+}
+
 pub fn varint_decode32(data: &[u8], value: &mut u32) -> usize {
     let len = varint_length_packed(&data[..data.len().min(5)]);
     let mut val = (data[0] & 0x7f) as u32;
@@ -28,7 +59,7 @@ pub fn varint_decode32(data: &[u8], value: &mut u32) -> usize {
     len as usize
 }
 
-pub fn varint_encode64(bytes: &mut [u8], mut value: i64) -> usize {
+pub fn varint_encode64(bytes: &mut [u8], mut value: u64) -> usize {
     let b = 128;
 
     let mut i = 0;
@@ -61,4 +92,21 @@ pub fn varint_decode64(data: &[u8], value: &mut u64) -> usize {
     }
     *value = val;
     len as usize
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn easy() {
+        let mut buf = [0; 10];
+        let original = 26;
+
+        let mut val = 0;
+        let len = varint_encode64(&mut buf, original);
+        varint_decode64(&buf[..len], &mut val);
+
+        assert_eq!(original as u64, val);
+    }
 }

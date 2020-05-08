@@ -1,8 +1,7 @@
 use std::borrow::Cow;
 use std::io;
-use zerocopy::AsBytes;
 
-#[derive(Debug, AsBytes, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u64)]
 pub enum CompressionType {
     None = 0,

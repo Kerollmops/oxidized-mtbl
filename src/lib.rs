@@ -1,5 +1,4 @@
 use compression::CompressionType;
-use zerocopy::AsBytes;
 
 pub use self::writer::{Writer, WriterOptions};
 pub use self::reader::{Reader, ReaderOptions, ReaderGet, ReaderIter};
@@ -23,7 +22,7 @@ fn bytes_compare(a: &[u8], b: &[u8]) -> i32 {
     }
 }
 
-#[derive(Debug, AsBytes, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u32)]
 pub enum FileVersion {
     FormatV1 = 0,

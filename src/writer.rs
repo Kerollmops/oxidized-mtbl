@@ -74,9 +74,11 @@ impl<W: io::Write> Writer<W> {
         let opt = options.unwrap_or_default();
 
         // derive defaut eventually
-        let mut metadata = Metadata::default();
-        metadata.data_block_size = opt.block_size;
-        metadata.compression_algorithm = opt.compression_type;
+        let metadata = Metadata {
+            data_block_size: opt.block_size,
+            compression_algorithm: opt.compression_type,
+            ..Metadata::default()
+        };
 
         let last_offset = 0;
 
@@ -112,13 +114,11 @@ impl<W: io::Write> Writer<W> {
 
         if self.pending_index_entry {
             let mut enc = [0; 10];
-
             assert!(self.data.is_emtpy());
             bytes_shortest_separator(&mut self.last_key, key);
-
-            let len_enc = varint_encode64(&mut enc, self.last_offset as i64);
+            let len_enc = varint_encode64(&mut enc, self.last_offset);
             self.index.add(&self.last_key, &enc[..len_enc]);
-
+            dbg!(&enc[..len_enc]);
             self.pending_index_entry = false;
         }
 
@@ -141,8 +141,9 @@ impl<W: io::Write> Writer<W> {
 
         if self.pending_index_entry {
             let mut enc = [0; 10];
-            let len_enc = varint_encode64(&mut enc, self.last_offset as i64);
+            let len_enc = varint_encode64(&mut enc, self.last_offset);
             self.index.add(&self.last_key, &enc[..len_enc]);
+            dbg!(&enc[..len_enc]);
             self.pending_index_entry = false;
         }
 
@@ -152,8 +153,7 @@ impl<W: io::Write> Writer<W> {
 
         // We must write exactly 512 bytes at the end to store the metadata
         let mut tbuf = [0u8; METADATA_SIZE];
-        let meta_bytes = self.metadata.as_bytes();
-        tbuf[..meta_bytes.len()].copy_from_slice(meta_bytes);
+        self.metadata.write_to_bytes(&mut tbuf);
         self.writer.write_all(&tbuf)
     }
 
@@ -180,8 +180,10 @@ impl<W: io::Write> Writer<W> {
         let crc = crc32c::crc32c(&block_content).to_le_bytes();
 
         let mut len = [0; 10];
-        let len_length = varint_encode64(&mut len, block_content.len() as i64);
+        dbg!(block_content.len());
+        let len_length = varint_encode64(&mut len, block_content.len() as u64);
         self.writer.write_all(&len[..len_length])?;
+        dbg!(&len[..len_length]);
         // already performed conversion before...
         self.writer.write_all(&crc)?;
         self.writer.write_all(&block_content)?;

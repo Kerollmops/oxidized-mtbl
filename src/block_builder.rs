@@ -1,5 +1,6 @@
 use std::mem;
-use byteorder::{LittleEndian, ByteOrder};
+use byteorder::{LittleEndian, WriteBytesExt};
+use crate::varint::varint_encode32;
 
 #[derive(Clone)]
 pub struct BlockBuilder {
@@ -69,12 +70,19 @@ impl BlockBuilder {
         self.buf.reserve(5 * 3 + key.len() + val.len());
 
         // add "[shared][non-shared][value length]" to buffer
-        LittleEndian::write_u32(&mut self.buf, shared as u32);
-        LittleEndian::write_u32(&mut self.buf, non_shared as u32);
-        LittleEndian::write_u32(&mut self.buf, val.len() as u32);
+        let mut buf = [0; 10];
+
+        let len = varint_encode32(&mut buf, shared as u32);
+        self.buf.extend_from_slice(&buf[..len]);
+
+        let len = varint_encode32(&mut buf, non_shared as u32);
+        self.buf.extend_from_slice(&buf[..len]);
+
+        let len = varint_encode32(&mut buf, val.len() as u32);
+        self.buf.extend_from_slice(&buf[..len]);
 
         // add key suffix to buffer followed by value
-        self.buf.extend_from_slice(&key[shared..shared + non_shared]);
+        self.buf.extend_from_slice(&key[shared..]);
         self.buf.extend_from_slice(val);
 
         // update state
@@ -90,15 +98,16 @@ impl BlockBuilder {
         self.buf.reserve(estimate);
 
         for restart in &self.restarts {
-            if restart64 {
-                LittleEndian::write_u64(&mut self.buf, *restart);
+            let _ = if restart64 {
+                self.buf.write_u64::<LittleEndian>(*restart)
             } else {
-                LittleEndian::write_u32(&mut self.buf, *restart as u32);
-            }
+                self.buf.write_u32::<LittleEndian>(*restart as u32)
+            };
         }
 
         let restarts_size = self.restarts.len();
-        let _ = LittleEndian::write_u32(&mut self.buf, restarts_size as u32);
+        dbg!(restarts_size);
+        let _ = self.buf.write_u32::<LittleEndian>(restarts_size as u32);
 
         self.finished = true;
         mem::replace(&mut self.buf, Vec::with_capacity(65536))
