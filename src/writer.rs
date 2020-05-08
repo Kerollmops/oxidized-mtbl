@@ -152,7 +152,7 @@ impl Writer {
         }
         self.m.index_block_offset = self.pending_offset as u64;
         // TODO find a better fix for the double borrow error.
-        self.m.bytes_index_block = self.write_block(&self.index.clone(), CompressionType::None) as u64;
+        self.m.bytes_index_block = self.write_block(&mut self.index.clone(), CompressionType::None) as u64;
         self.index.reset();
         let meta_bytes = self.m.as_bytes();
         self.file.write_all(meta_bytes)
@@ -165,13 +165,13 @@ impl Writer {
         }
         assert!(!self.pending_index_entry);
         // TODO find a better fix for the double borrow error.
-        self.m.bytes_data_blocks += self.write_block(&self.data.clone(), self.opt.compression_type) as u64;
+        self.m.bytes_data_blocks += self.write_block(&mut self.data.clone(), self.opt.compression_type) as u64;
         self.data.reset();
         self.m.count_data_blocks += 1;
         self.pending_index_entry = true;
     }
 
-    pub fn write_block(&mut self, block: &BlockBuilder, compression_type: CompressionType) -> usize {
+    pub fn write_block(&mut self, block: &mut BlockBuilder, compression_type: CompressionType) -> usize {
 
         let raw_content = block.finish();
 

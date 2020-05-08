@@ -1,4 +1,5 @@
 use std::mem;
+use byteorder::{LittleEndian, ByteOrder};
 
 #[derive(Clone)]
 pub struct BlockBuilder {
@@ -47,8 +48,25 @@ impl BlockBuilder {
         unimplemented!()
     }
 
-    pub fn finish(&self) -> Vec<u8> {
-        unimplemented!()
+    pub fn finish(&mut self) -> Vec<u8> {
+        let restart64 = self.buf.len() > u32::max_value() as usize;
+
+        let estimate = self.current_size_estimate();
+        self.buf.reserve(estimate);
+
+        for restart in &self.restarts {
+            if restart64 {
+                let _ = LittleEndian::write_u64(&mut self.buf, *restart);
+            } else {
+                let _ = LittleEndian::write_u32(&mut self.buf, *restart as u32);
+            }
+        }
+
+        let restarts_size = self.restarts.len();
+        let _ = LittleEndian::write_u32(&mut self.buf, restarts_size as u32);
+
+        self.finished = true;
+        mem::replace(&mut self.buf, Vec::with_capacity(65536))
     }
 
     //pub fn block_builder_finish(&self, uint8_t **buf, bufsz: &[usize]){
