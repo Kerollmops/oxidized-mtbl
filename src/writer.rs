@@ -9,7 +9,7 @@ use crate::varint::varint_encode64;
 use crate::{bytes_compare, FileVersion, Metadata};
 
 const DEFAULT_BLOCK_RESTART_INTERVAL: usize = 16;
-const DEFAULT_COMPRESSION_LEVEL: i32 = -10_000;
+const DEFAULT_COMPRESSION_LEVEL: u32 = 0;
 const METADATA_SIZE: usize = 512;
 const MIN_BLOCK_SIZE: u64 = 1024;
 pub const DEFAULT_BLOCK_SIZE: u64 = 8192;
@@ -18,7 +18,7 @@ pub const DEFAULT_COMPRESSION_TYPE: CompressionType = CompressionType::None;
 #[derive(Clone, Copy)]
 pub struct WriterOptions {
     compression_type: CompressionType,
-    compression_level: i32,
+    compression_level: u32,
     block_size: u64,
     block_restart_interval: usize,
 }
@@ -32,7 +32,7 @@ impl WriterOptions {
         self.compression_type = compression_type;
     }
 
-    pub fn set_compression_level(&mut self, level: i32) {
+    pub fn set_compression_level(&mut self, level: u32) {
         self.compression_level = level;
     }
 
@@ -167,7 +167,7 @@ impl<W: io::Write> Writer<W> {
 
     pub fn write_block(&mut self, block: &mut BlockBuilder, compression_type: CompressionType) -> io::Result<usize> {
         let raw_content = block.finish();
-        let block_content = compress(compression_type, self.opt.compression_level, &raw_content).expect("error compressing block");
+        let block_content = compress(compression_type, self.opt.compression_level, &raw_content)?;
         assert!(self.metadata.file_version == FileVersion::FormatV2);
 
         let crc = crc32c::crc32c(&block_content).to_le_bytes();

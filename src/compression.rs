@@ -25,15 +25,18 @@ pub fn decompress(type_: CompressionType, data: &[u8]) -> io::Result<Cow<[u8]>> 
     }
 }
 
-pub fn compress(type_: CompressionType, _level: i32, data: &[u8]) -> io::Result<Cow<[u8]>> {
+pub fn compress(type_: CompressionType, level: u32, data: &[u8]) -> io::Result<Cow<[u8]>> {
     match type_ {
         CompressionType::None => Ok(Cow::Borrowed(data)),
+        CompressionType::Zlib => zlib_compress(data, level),
         other => {
             let error = format!("unsupported {:?} decompression", other);
             Err(io::Error::new(io::ErrorKind::Other, error))
         },
     }
 }
+
+// --------- zlib ---------
 
 #[cfg(feature = "zlib")]
 fn zlib_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
@@ -49,6 +52,22 @@ fn zlib_decompress(_data: &[u8]) -> io::Result<Cow<[u8]>> {
     Err(io::Error::new(io::ErrorKind::Other, "unsupported zlib decompression"))
 }
 
+#[cfg(feature = "zlib")]
+fn zlib_compress(data: &[u8], level: u32) -> io::Result<Cow<[u8]>> {
+    use std::io::Write;
+    let compression = flate2::Compression::new(level);
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), compression);
+    encoder.write_all(data)?;
+    encoder.finish().map(Cow::Owned)
+}
+
+#[cfg(not(feature = "zlib"))]
+fn zlib_compress(_data: &[u8], _level: u32) -> io::Result<Cow<[u8]>> {
+    Err(io::Error::new(io::ErrorKind::Other, "unsupported zlib compression"))
+}
+
+// --------- snappy ---------
+
 #[cfg(feature = "snappy")]
 fn snappy_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
     let mut decoder = snap::raw::Decoder::new();
@@ -59,6 +78,19 @@ fn snappy_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
 fn snappy_decompress(_data: &[u8]) -> io::Result<Cow<[u8]>> {
     Err(io::Error::new(io::ErrorKind::Other, "unsupported snappy decompression"))
 }
+
+#[cfg(feature = "snappy")]
+fn snappy_compress(data: &[u8], level: u32) -> io::Result<Cow<[u8]>> {
+    let mut decoder = snap::raw::Decoder::new();
+    decoder.decompress_vec(data).map_err(Into::into).map(Cow::Owned)
+}
+
+#[cfg(not(feature = "snappy"))]
+fn snappy_compress(_data: &[u8], level: u32) -> io::Result<Cow<[u8]>> {
+    Err(io::Error::new(io::ErrorKind::Other, "unsupported snappy decompression"))
+}
+
+// --------- zstd ---------
 
 #[cfg(feature = "zstd")]
 fn zstd_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {

@@ -1,11 +1,10 @@
 #[cfg(test)]
 #[macro_use] extern crate quickcheck;
 
-use compression::CompressionType;
-
-pub use self::writer::{Writer, WriterOptions};
-pub use self::reader::{Reader, ReaderOptions, ReaderGet, ReaderIter};
+pub use compression::CompressionType;
 pub use self::metadata::Metadata;
+pub use self::reader::{Reader, ReaderOptions, ReaderGet, ReaderIter};
+pub use self::writer::{Writer, WriterOptions};
 
 mod block;
 mod block_builder;
