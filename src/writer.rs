@@ -65,6 +65,12 @@ pub struct Writer<W> {
     pending_offset: u64,
 }
 
+impl Writer<Vec<u8>> {
+    pub fn memory(options: Option<WriterOptions>) -> Self {
+        Writer::new(Vec::new(), options).unwrap()
+    }
+}
+
 impl<W: io::Write> Writer<W> {
     pub fn new(writer: W, options: Option<WriterOptions>) -> io::Result<Self> {
         let opt = options.unwrap_or_default();
