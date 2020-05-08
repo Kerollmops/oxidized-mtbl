@@ -1,4 +1,4 @@
-use std::{cmp, io};
+use std::{cmp, mem, io};
 
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 
@@ -188,7 +188,7 @@ impl<W: io::Write> Writer<W> {
     }
 }
 
-pub fn bytes_shortest_separator(start: &mut Vec<u8>, limit: &[u8]) {
+fn bytes_shortest_separator(start: &mut Vec<u8>, limit: &[u8]) {
     let min_length = if start.len() < limit.len() { start.len() } else { limit.len() };
 
     let mut diff_index = 0;
@@ -199,11 +199,11 @@ pub fn bytes_shortest_separator(start: &mut Vec<u8>, limit: &[u8]) {
 
     if diff_index >= min_length { return }
 
-    let diff_byte: u8 = start[diff_index];
-    if diff_byte < 0xFF && diff_byte + 1 < limit[diff_index] {
+    let diff_byte = start[diff_index];
+    if diff_byte < u8::max_value() && diff_byte + 1 < limit[diff_index] {
         start[diff_index] += 1;
         start.truncate(diff_index + 1);
-    } else {
+    } else if diff_index < min_length - mem::size_of::<u16>() {
         // awww yeah, big endian arithmetic on strings
         let u_start = BigEndian::read_u16(&start[diff_index..]);
         let u_limit = BigEndian::read_u16(&limit[diff_index..]);

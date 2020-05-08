@@ -10,8 +10,11 @@ fn main() {
     let options = WriterOptions::default();
     let mut writer = Writer::new(file, Some(options)).unwrap();
 
-    writer.add(b"comment", b"ca va?").unwrap();
-    writer.add(b"hello", b"les potes").unwrap();
+    for i in 0..300_000 {
+        let string = format!("{:010}", i);
+        let bytes = string.as_bytes();
+        writer.add(bytes, bytes).unwrap();
+    }
 
     writer.finish().unwrap();
 }
