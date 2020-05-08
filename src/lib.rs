@@ -4,10 +4,14 @@ use std::sync::Arc;
 
 use byteorder::{ByteOrder, LittleEndian};
 
-use error::Error;
 use block::{Block, BlockIter};
-use varint::varint_decode64;
 use compression::{CompressionType, decompress};
+use crate::writer::DEFAULT_BLOCK_SIZE;
+use crate::writer::DEFAULT_COMPRESSION_TYPE;
+use error::Error;
+use varint::varint_decode64;
+
+pub use self::writer::{Writer, WriterOptions};
 
 mod error;
 mod block;
@@ -103,6 +107,23 @@ impl Metadata {
     pub fn as_bytes<'a>(&'a self) -> &'a [u8] {
         let ptr = self as *const _ as *const u8;
         unsafe { std::slice::from_raw_parts(ptr, std::mem::size_of::<Self>()) }
+    }
+}
+
+impl Default for Metadata {
+    fn default() -> Metadata {
+        Metadata {
+            file_version: FileVersion::FormatV2,
+            index_block_offset: 0,
+            data_block_size: DEFAULT_BLOCK_SIZE,
+            compression_algorithm: DEFAULT_COMPRESSION_TYPE,
+            count_entries: 0,
+            count_data_blocks: 0,
+            bytes_data_blocks: 0,
+            bytes_index_block: 0,
+            bytes_keys: 0,
+            bytes_values: 0,
+        }
     }
 }
 
