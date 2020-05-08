@@ -71,15 +71,9 @@ impl BlockBuilder {
 
         // add "[shared][non-shared][value length]" to buffer
         let mut buf = [0; 10];
-
-        let len = varint_encode32(&mut buf, shared as u32);
-        self.buf.extend_from_slice(&buf[..len]);
-
-        let len = varint_encode32(&mut buf, non_shared as u32);
-        self.buf.extend_from_slice(&buf[..len]);
-
-        let len = varint_encode32(&mut buf, val.len() as u32);
-        self.buf.extend_from_slice(&buf[..len]);
+        self.buf.extend_from_slice(varint_encode32(&mut buf, shared as u32));
+        self.buf.extend_from_slice(varint_encode32(&mut buf, non_shared as u32));
+        self.buf.extend_from_slice(varint_encode32(&mut buf, val.len() as u32));
 
         // add key suffix to buffer followed by value
         self.buf.extend_from_slice(&key[shared..]);
@@ -106,7 +100,6 @@ impl BlockBuilder {
         }
 
         let restarts_size = self.restarts.len();
-        dbg!(restarts_size);
         let _ = self.buf.write_u32::<LittleEndian>(restarts_size as u32);
 
         self.finished = true;

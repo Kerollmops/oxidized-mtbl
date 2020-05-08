@@ -116,9 +116,7 @@ impl<W: io::Write> Writer<W> {
             let mut enc = [0; 10];
             assert!(self.data.is_emtpy());
             bytes_shortest_separator(&mut self.last_key, key);
-            let len_enc = varint_encode64(&mut enc, self.last_offset);
-            self.index.add(&self.last_key, &enc[..len_enc]);
-            dbg!(&enc[..len_enc]);
+            self.index.add(&self.last_key, varint_encode64(&mut enc, self.last_offset));
             self.pending_index_entry = false;
         }
 
@@ -141,9 +139,7 @@ impl<W: io::Write> Writer<W> {
 
         if self.pending_index_entry {
             let mut enc = [0; 10];
-            let len_enc = varint_encode64(&mut enc, self.last_offset);
-            self.index.add(&self.last_key, &enc[..len_enc]);
-            dbg!(&enc[..len_enc]);
+            self.index.add(&self.last_key, varint_encode64(&mut enc, self.last_offset));
             self.pending_index_entry = false;
         }
 
@@ -180,15 +176,13 @@ impl<W: io::Write> Writer<W> {
         let crc = crc32c::crc32c(&block_content).to_le_bytes();
 
         let mut len = [0; 10];
-        dbg!(block_content.len());
-        let len_length = varint_encode64(&mut len, block_content.len() as u64);
-        self.writer.write_all(&len[..len_length])?;
-        dbg!(&len[..len_length]);
+        let len = varint_encode64(&mut len, block_content.len() as u64);
+        self.writer.write_all(len)?;
         // already performed conversion before...
         self.writer.write_all(&crc)?;
         self.writer.write_all(&block_content)?;
 
-        let bytes_written = len_length + crc.len() + block_content.len();
+        let bytes_written = len.len() + crc.len() + block_content.len();
 
         self.last_offset = self.pending_offset;
         self.pending_offset += bytes_written as u64;
