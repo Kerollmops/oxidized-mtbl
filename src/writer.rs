@@ -173,7 +173,10 @@ impl<W: io::Write> Writer<W> {
         let block_content = compress(compression_type, self.opt.compression_level, &raw_content)?;
         assert!(self.metadata.file_version == FileVersion::FormatV2);
 
+        #[cfg(feature = "checksum")]
         let crc = crc32c::crc32c(&block_content).to_le_bytes();
+        #[cfg(not(feature = "checksum"))]
+        let crc = 0u32.to_le_bytes();
 
         let mut len = [0; 10];
         let len = varint_encode64(&mut len, block_content.len() as u64);
