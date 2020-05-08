@@ -28,8 +28,18 @@ pub fn varint_decode32(data: &[u8], value: &mut u32) -> usize {
     len as usize
 }
 
-pub fn varint_encode64(_bytes: &mut [u8], _value: i64) -> usize {
-    unimplemented!()
+pub fn varint_encode64(bytes: &mut [u8], mut value: i64) -> usize {
+    let b = 128;
+
+    let mut i = 0;
+    while value >= b {
+        bytes[i] = ((value & (b - 1)) | b) as u8;
+        value >>= 7;
+        i += 1;
+    }
+    bytes[i] = value as u8;
+
+    return i + 1;
 }
 
 pub fn varint_decode64(data: &[u8], value: &mut u64) -> usize {
