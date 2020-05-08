@@ -1,3 +1,7 @@
+use std::io::Write;
+use std::fs::File;
+use std::mem;
+
 use crate::compression::CompressionType;
 use crate::Metadata;
 use crate::block_builder::BlockBuilder;
@@ -5,15 +9,12 @@ use crate::FileVersion;
 use crate::compression::{compress_level, compress};
 use crate::varint::varint_encode64;
 
-use std::io::Write;
-use std::fs::File;
-
 const DEFAULT_COMPRESSION_TYPE: CompressionType = CompressionType::None;
 const DEFAULT_COMPRESSION_LEVEL: i32 = -10_000;
 const DEFAULT_BLOCK_SIZE: u64 = 8192;
 const DEFAULT_BLOCK_RESTART_INTERVAL: usize = 16;
 const METADATA_SIZE: usize = 512;
-            
+
 pub struct WriterOptions {
     compression_type: CompressionType,
     compression_level: i32,
@@ -21,12 +22,11 @@ pub struct WriterOptions {
     block_restart_interval: usize,
 }
 
-
 pub struct Writer {
     file: File,
     m: Metadata,
-    data: BlockBuilder, 
-    index: BlockBuilder, 
+    data: BlockBuilder,
+    index: BlockBuilder,
     opt: WriterOptions,
     last_key: Vec<u8>,
     last_offset: u64,
@@ -63,13 +63,11 @@ impl WriterOptions {
 }
 
 impl Writer {
-
     pub fn new(filename: &str, options: WriterOptions) -> Option<Self> {
         File::create(filename).map(|f| Self::init_fd(f, Some(options))).ok()
     }
 
     pub fn init_fd(file: File, options: Option<WriterOptions>) -> Self {
-
         let mut file = file.try_clone().expect("error cloning the file");
 
         let opt = match options {
@@ -153,7 +151,8 @@ impl Writer {
             self.pending_index_entry = false;
         }
         self.m.index_block_offset = self.pending_offset as u64;
-        self.m.bytes_index_block = self.write_block(&self.index, CompressionType::None) as u64;
+        // TODO find a better fix for the double borrow error.
+        self.m.bytes_index_block = self.write_block(&self.index.clone(), CompressionType::None) as u64;
         self.index.reset();
         let meta_bytes = self.m.as_bytes();
         self.file.write_all(meta_bytes);
@@ -162,11 +161,11 @@ impl Writer {
     fn flush(&mut self) {
         assert!(!self.closed);
         if self.data.is_emtpy() {
-            return 
+            return
         }
         assert!(!self.pending_index_entry);
-        // do something about double borrow.
-        self.m.bytes_data_blocks += self.write_block(&self.data, self.opt.compression_type) as u64;
+        // TODO find a better fix for the double borrow error.
+        self.m.bytes_data_blocks += self.write_block(&self.data.clone(), self.opt.compression_type) as u64;
         self.data.reset();
         self.m.count_data_blocks += 1;
         self.pending_index_entry = true;
@@ -177,7 +176,7 @@ impl Writer {
         let raw_content = block.finish();
 
         let block_content = if compression_type == CompressionType::None {
-           raw_content 
+           raw_content
         } else if self.opt.compression_level == DEFAULT_COMPRESSION_LEVEL {
             compress(compression_type, &raw_content).expect("error compressing block")
         } else {

@@ -1,17 +1,16 @@
-
+#[derive(Clone)]
 pub struct BlockBuilder {
-	block_restart_interval: usize,
-	buf: Vec<u8>,
-	last_key: Vec<u8>,
-	restarts: Vec<u64>,
-	finished: bool,
-	counter: usize,
+    block_restart_interval: usize,
+    buf: Vec<u8>,
+    last_key: Vec<u8>,
+    restarts: Vec<u64>,
+    finished: bool,
+    counter: usize,
 }
-
 
 impl BlockBuilder {
     pub fn new(block_restart_interval: usize) -> Self {
-        let mut bb = Self {
+        let mut bb = BlockBuilder {
             block_restart_interval,
             buf: Vec::with_capacity(65536),
             last_key: Vec::with_capacity(256),
@@ -43,6 +42,7 @@ impl BlockBuilder {
     pub fn add(&mut self, _key: &[u8], _val: &[u8]) {
         unimplemented!()
     }
+
     pub fn finish(&self) -> Vec<u8> {
         unimplemented!()
     }
@@ -50,5 +50,3 @@ impl BlockBuilder {
     //pub fn block_builder_finish(&self, uint8_t **buf, bufsz: &[usize]){
     //}
 }
-
-

@@ -99,10 +99,10 @@ impl Metadata {
             bytes_values,
         })
     }
-    
+
     pub fn as_bytes<'a>(&'a self) -> &'a [u8] {
         let ptr = self as *const _ as *const u8;
-        unsafe { std::slice::from_raw_parts(ptr, std::mem::size_of::<Self>()) } 
+        unsafe { std::slice::from_raw_parts(ptr, std::mem::size_of::<Self>()) }
     }
 }
 
