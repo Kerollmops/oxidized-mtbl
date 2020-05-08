@@ -8,7 +8,7 @@ fn main() {
     let file = File::create(path).unwrap();
 
     let mut options = WriterOptions::default();
-    options.set_compression_type(CompressionType::Snappy);
+    options.set_compression_type(CompressionType::Zstd);
 
     let mut writer = Writer::new(file, Some(options)).unwrap();
 

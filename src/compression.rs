@@ -30,6 +30,7 @@ pub fn compress(type_: CompressionType, level: u32, data: &[u8]) -> io::Result<C
         CompressionType::None => Ok(Cow::Borrowed(data)),
         CompressionType::Zlib => zlib_compress(data, level),
         CompressionType::Snappy => snappy_compress(data, level),
+        CompressionType::Zstd => zstd_compress(data, level),
         other => {
             let error = format!("unsupported {:?} decompression", other);
             Err(io::Error::new(io::ErrorKind::Other, error))
@@ -103,4 +104,16 @@ fn zstd_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
 #[cfg(not(feature = "zstd"))]
 fn zstd_decompress(_data: &[u8]) -> io::Result<Cow<[u8]>> {
     Err(io::Error::new(io::ErrorKind::Other, "unsupported zstd decompression"))
+}
+
+#[cfg(feature = "zstd")]
+fn zstd_compress(data: &[u8], level: u32) -> io::Result<Cow<[u8]>> {
+    let mut buffer = Vec::new();
+    zstd::stream::copy_encode(data, &mut buffer, level as i32)?;
+    Ok(Cow::Owned(buffer))
+}
+
+#[cfg(not(feature = "zstd"))]
+fn zstd_compress(_data: &[u8], _level: u32) -> io::Result<Cow<[u8]>> {
+    Err(io::Error::new(io::ErrorKind::Other, "unsupported zstd compression"))
 }
