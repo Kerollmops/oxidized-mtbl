@@ -8,12 +8,9 @@ use crate::compression::CompressionType;
 use crate::varint::varint_encode64;
 use crate::{bytes_compare, FileVersion, Metadata};
 
-const DEFAULT_BLOCK_RESTART_INTERVAL: usize = 16;
-const DEFAULT_COMPRESSION_LEVEL: u32 = 0;
-const METADATA_SIZE: usize = 512;
-const MIN_BLOCK_SIZE: u64 = 1024;
-pub const DEFAULT_BLOCK_SIZE: u64 = 8192;
-pub const DEFAULT_COMPRESSION_TYPE: CompressionType = CompressionType::None;
+use crate::{DEFAULT_COMPRESSION_TYPE, DEFAULT_COMPRESSION_LEVEL};
+use crate::{DEFAULT_BLOCK_SIZE, DEFAULT_BLOCK_RESTART_INTERVAL};
+use crate::{MIN_BLOCK_SIZE, METADATA_SIZE};
 
 #[derive(Clone, Copy)]
 pub struct WriterOptions {

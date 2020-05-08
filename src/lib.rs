@@ -1,6 +1,15 @@
 #[cfg(test)]
 #[macro_use] extern crate quickcheck;
 
+const DEFAULT_BLOCK_RESTART_INTERVAL: usize = 16;
+const DEFAULT_BLOCK_SIZE: u64 = 8192;
+const DEFAULT_COMPRESSION_LEVEL: u32 = 0;
+const DEFAULT_COMPRESSION_TYPE: CompressionType = CompressionType::None;
+const METADATA_SIZE: usize = 512;
+const MIN_BLOCK_SIZE: u64 = 1024;
+const MAGIC: u32 = 0x4D54424C;
+const MAGIC_V1: u32 = 0x77846676;
+
 pub use compression::CompressionType;
 pub use self::metadata::Metadata;
 pub use self::reader::{Reader, ReaderOptions, ReaderGet, ReaderIter};

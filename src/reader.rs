@@ -7,7 +7,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use crate::block::{Block, BlockIter};
 use crate::compression::decompress;
 use crate::error::Error;
-use crate::metadata::MTBL_METADATA_SIZE;
+use crate::METADATA_SIZE;
 use crate::varint::varint_decode64;
 use crate::{bytes_compare, Metadata, FileVersion};
 
@@ -33,20 +33,20 @@ pub struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     pub fn new(data: &'a [u8], _opt: ReaderOptions) -> Result<Reader<'a>, Error> {
-        if data.len() < MTBL_METADATA_SIZE {
+        if data.len() < METADATA_SIZE {
             return Err(Error::InvalidMetadataSize)
         }
 
-        let metadata_offset = data.len() - MTBL_METADATA_SIZE;
-        let metadata_bytes = &data[metadata_offset..metadata_offset + MTBL_METADATA_SIZE];
+        let metadata_offset = data.len() - METADATA_SIZE;
+        let metadata_bytes = &data[metadata_offset..metadata_offset + METADATA_SIZE];
         let metadata = Metadata::read_from_bytes(metadata_bytes)?;
 
         // Sanitize the index block offset.
         // We calculate the maximum possible index block offset for this file to
         // be the total size of the file (r->len_data) minus the length of the
-        // metadata block (MTBL_METADATA_SIZE) minus the length of the minimum
+        // metadata block (METADATA_SIZE) minus the length of the minimum
         // sized block, which requires 4 fixed-length 32-bit integers (16 bytes).
-        let max_index_block_offset = (data.len() - MTBL_METADATA_SIZE - 16) as u64;
+        let max_index_block_offset = (data.len() - METADATA_SIZE - 16) as u64;
         if metadata.index_block_offset > max_index_block_offset {
             return Err(Error::InvalidIndexBlockOffset);
         }

@@ -5,12 +5,8 @@ use byteorder::{LittleEndian, ByteOrder, WriteBytesExt};
 use crate::compression::CompressionType;
 use crate::error::Error;
 use crate::FileVersion;
-use crate::writer::DEFAULT_BLOCK_SIZE;
-use crate::writer::DEFAULT_COMPRESSION_TYPE;
-
-const MTBL_MAGIC_V1: u32 = 0x77846676;
-const MTBL_MAGIC: u32 = 0x4D54424C;
-pub const MTBL_METADATA_SIZE: usize = 512;
+use crate::{METADATA_SIZE, DEFAULT_BLOCK_SIZE, DEFAULT_COMPRESSION_TYPE};
+use crate::{MAGIC, MAGIC_V1};
 
 #[derive(Debug)]
 #[repr(C)]
@@ -29,10 +25,10 @@ pub struct Metadata {
 
 impl Metadata {
     pub(crate) fn read_from_bytes(bytes: &[u8]) -> Result<Metadata, Error> {
-        let magic = LittleEndian::read_u32(&bytes[MTBL_METADATA_SIZE - mem::size_of::<u32>()..]);
+        let magic = LittleEndian::read_u32(&bytes[METADATA_SIZE - mem::size_of::<u32>()..]);
         let file_version = match magic {
-            MTBL_MAGIC_V1 => FileVersion::FormatV1,
-            MTBL_MAGIC => FileVersion::FormatV2,
+            MAGIC_V1 => FileVersion::FormatV1,
+            MAGIC => FileVersion::FormatV2,
             _ => return Err(Error::InvalidFormatVersion),
         };
 
@@ -66,7 +62,7 @@ impl Metadata {
         bytes.iter_mut().for_each(|x| *x = 0);
 
         // split, left part for data, right part for magic number
-        let (mut data, magic) = bytes.split_at_mut(MTBL_METADATA_SIZE - mem::size_of::<u32>());
+        let (mut data, magic) = bytes.split_at_mut(METADATA_SIZE - mem::size_of::<u32>());
 
         data.write_u64::<LittleEndian>(self.index_block_offset).unwrap();
         data.write_u64::<LittleEndian>(self.data_block_size).unwrap();
@@ -79,7 +75,7 @@ impl Metadata {
         data.write_u64::<LittleEndian>(self.bytes_values).unwrap();
 
         // Write the magic number at the end of the buffer
-        LittleEndian::write_u32(magic, MTBL_MAGIC)
+        LittleEndian::write_u32(magic, MAGIC)
     }
 }
 
