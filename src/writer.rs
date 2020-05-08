@@ -150,8 +150,15 @@ impl<W: io::Write> Writer<W> {
         }
 
         self.metadata.index_block_offset = self.pending_offset as u64;
-        // TODO find a better fix for the double borrow error.
-        self.metadata.bytes_index_block = self.write_block(&mut self.index.clone(), CompressionType::None)? as u64;
+        self.metadata.bytes_index_block += write_block(
+            &mut self.writer,
+            CompressionType::None,
+            0,
+            self.metadata.file_version,
+            &mut self.last_offset,
+            &mut self.pending_offset,
+            &mut self.index,
+        )? as u64;
 
         // We must write exactly 512 bytes at the end to store the metadata
         let mut tbuf = [0u8; METADATA_SIZE];
@@ -165,39 +172,56 @@ impl<W: io::Write> Writer<W> {
         if self.data.is_emtpy() { return Ok(()) }
 
         assert!(!self.pending_index_entry);
-        // TODO find a better fix for the double borrow error.
-        self.metadata.bytes_data_blocks += self.write_block(&mut self.data.clone(), self.opt.compression_type)? as u64;
-        self.data.reset();
+        self.metadata.bytes_data_blocks += write_block(
+            &mut self.writer,
+            self.opt.compression_type,
+            self.opt.compression_level,
+            self.metadata.file_version,
+            &mut self.last_offset,
+            &mut self.pending_offset,
+            &mut self.data,
+        )? as u64;
         self.metadata.count_data_blocks += 1;
         self.pending_index_entry = true;
 
         Ok(())
     }
+}
 
-    pub fn write_block(&mut self, block: &mut BlockBuilder, compression_type: CompressionType) -> io::Result<usize> {
-        let raw_content = block.finish();
-        let block_content = compress(compression_type, self.opt.compression_level, &raw_content)?;
-        assert!(self.metadata.file_version == FileVersion::FormatV2);
+fn write_block<W: io::Write>(
+    writer: &mut W,
+    compression_type: CompressionType,
+    compression_level: u32,
+    file_version: FileVersion,
+    last_offset: &mut u64,
+    pending_offset: &mut u64,
+    block: &mut BlockBuilder,
+) -> io::Result<usize>
+{
+    let raw_content = block.finish();
+    let block_content = compress(compression_type, compression_level, &raw_content)?;
+    assert!(file_version == FileVersion::FormatV2);
 
-        #[cfg(feature = "checksum")]
-        let crc = crc32c::crc32c(&block_content).to_le_bytes();
-        #[cfg(not(feature = "checksum"))]
-        let crc = 0u32.to_le_bytes();
+    #[cfg(feature = "checksum")]
+    let crc = crc32c::crc32c(&block_content).to_le_bytes();
+    #[cfg(not(feature = "checksum"))]
+    let crc = 0u32.to_le_bytes();
 
-        let mut len = [0; 10];
-        let len = varint_encode64(&mut len, block_content.len() as u64);
-        self.writer.write_all(len)?;
-        // already performed conversion before...
-        self.writer.write_all(&crc)?;
-        self.writer.write_all(&block_content)?;
+    let mut len = [0; 10];
+    let len = varint_encode64(&mut len, block_content.len() as u64);
+    writer.write_all(len)?;
+    // already performed conversion before...
+    writer.write_all(&crc)?;
+    writer.write_all(&block_content)?;
 
-        let bytes_written = len.len() + crc.len() + block_content.len();
+    let bytes_written = len.len() + crc.len() + block_content.len();
 
-        self.last_offset = self.pending_offset;
-        self.pending_offset += bytes_written as u64;
+    *last_offset = *pending_offset;
+    *pending_offset += bytes_written as u64;
 
-        Ok(bytes_written)
-    }
+    block.reset();
+
+    Ok(bytes_written)
 }
 
 fn bytes_shortest_separator(start: &mut Vec<u8>, limit: &[u8]) {
