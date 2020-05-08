@@ -3,12 +3,13 @@ use std::fs::File;
 use std::io::Write;
 use std::{cmp, io};
 
-use crate::compression::CompressionType;
-use crate::Metadata;
+use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
+
 use crate::block_builder::BlockBuilder;
-use crate::FileVersion;
 use crate::compression::compress;
+use crate::compression::CompressionType;
 use crate::varint::varint_encode64;
+use crate::{bytes_compare, FileVersion, Metadata};
 
 const DEFAULT_BLOCK_RESTART_INTERVAL: usize = 16;
 const DEFAULT_COMPRESSION_LEVEL: i32 = -10_000;
@@ -104,7 +105,7 @@ impl Writer {
         }
     }
 
-    pub fn add(&mut self, key: &[u8], val: &[u8]) -> Result<(), ()> {
+    pub fn add(&mut self, key: &[u8], val: &[u8]) -> io::Result<()> {
         assert!(!self.closed, "writer is closed");
 
         if self.metadata.count_entries > 0 {
@@ -117,14 +118,14 @@ impl Writer {
         let estimated_block_size = estimated_block_size + 3 * 5 + key.len() + val.len();
 
         if estimated_block_size >= self.opt.block_size as usize {
-            self.flush();
+           self.flush()?;
         }
 
         if self.pending_index_entry {
             let mut enc = [0; 10];
 
             assert!(self.data.is_emtpy());
-            bytes_shortest_separator(&self.last_key, key);
+            bytes_shortest_separator(&mut self.last_key, key);
 
             let len_enc = varint_encode64(&mut enc, self.last_offset as i64);
             self.index.add(&self.last_key, &enc[..len_enc]);
@@ -212,6 +213,30 @@ impl Writer {
     }
 }
 
-pub fn bytes_shortest_separator(_start: &[u8], _limit: &[u8]) {
-    unimplemented!()
+pub fn bytes_shortest_separator(start: &mut Vec<u8>, limit: &[u8]) {
+    let min_length = if start.len() < limit.len() { start.len() } else { limit.len() };
+
+    let mut diff_index = 0;
+    for (s, l) in start.iter().zip(limit) {
+        if diff_index >= min_length || s != l { break }
+        diff_index += 1;
+    }
+
+    if diff_index >= min_length { return }
+
+    let diff_byte: u8 = start[diff_index];
+    if diff_byte < 0xFF && diff_byte + 1 < limit[diff_index] {
+        start[diff_index] += 1;
+        start.truncate(diff_index + 1);
+    } else {
+        // awww yeah, big endian arithmetic on strings
+        let u_start = BigEndian::read_u16(&start[diff_index..]);
+        let u_limit = BigEndian::read_u16(&limit[diff_index..]);
+        let u_between = u_start + 1;
+        if u_start <= u_between && u_between <= u_limit {
+            let _ = start.write_u16::<BigEndian>(u_between);
+        }
+    }
+
+    assert!(bytes_compare(&start, limit) < 0);
 }

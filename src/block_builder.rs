@@ -69,9 +69,9 @@ impl BlockBuilder {
         self.buf.reserve(5 * 3 + key.len() + val.len());
 
         // add "[shared][non-shared][value length]" to buffer
-        let _ = LittleEndian::write_u32(&mut self.buf, shared as u32);
-        let _ = LittleEndian::write_u32(&mut self.buf, non_shared as u32);
-        let _ = LittleEndian::write_u32(&mut self.buf, val.len() as u32);
+        LittleEndian::write_u32(&mut self.buf, shared as u32);
+        LittleEndian::write_u32(&mut self.buf, non_shared as u32);
+        LittleEndian::write_u32(&mut self.buf, val.len() as u32);
 
         // add key suffix to buffer followed by value
         self.buf.extend_from_slice(&key[shared..shared + non_shared]);
@@ -91,9 +91,9 @@ impl BlockBuilder {
 
         for restart in &self.restarts {
             if restart64 {
-                let _ = LittleEndian::write_u64(&mut self.buf, *restart);
+                LittleEndian::write_u64(&mut self.buf, *restart);
             } else {
-                let _ = LittleEndian::write_u32(&mut self.buf, *restart as u32);
+                LittleEndian::write_u32(&mut self.buf, *restart as u32);
             }
         }
 
