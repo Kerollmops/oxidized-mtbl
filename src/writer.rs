@@ -185,14 +185,7 @@ impl Writer {
 
     pub fn write_block(&mut self, block: &mut BlockBuilder, compression_type: CompressionType) -> io::Result<usize> {
         let raw_content = block.finish();
-
-        let block_content = if compression_type == CompressionType::None {
-           Cow::Borrowed(&raw_content)
-        } else {
-            let compressed = compress(compression_type, self.opt.compression_level, &raw_content).expect("error compressing block");
-            Cow::Owned(compressed)
-        };
-
+        let block_content = compress(compression_type, self.opt.compression_level, &raw_content).expect("error compressing block");
         assert!(self.metadata.file_version == FileVersion::FormatV2);
 
         let crc = crc32c::crc32c(&block_content).to_le_bytes();

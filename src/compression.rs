@@ -25,6 +25,16 @@ pub fn decompress(type_: CompressionType, data: &[u8]) -> io::Result<Cow<[u8]>> 
     }
 }
 
+pub fn compress(type_: CompressionType, level_: i32, data: &[u8]) -> io::Result<Cow<[u8]>> {
+    match type_ {
+        CompressionType::None => Ok(Cow::Borrowed(data)),
+        other => {
+            let error = format!("unsupported {:?} decompression", other);
+            Err(io::Error::new(io::ErrorKind::Other, error))
+        },
+    }
+}
+
 #[cfg(feature = "zlib")]
 fn zlib_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
     use std::io::Read;
@@ -61,8 +71,3 @@ fn zstd_decompress(data: &[u8]) -> io::Result<Cow<[u8]>> {
 fn zstd_decompress(_data: &[u8]) -> io::Result<Cow<[u8]>> {
     Err(io::Error::new(io::ErrorKind::Other, "unsupported zstd decompression"))
 }
-
-pub fn compress(type_: CompressionType, level_: i32, input: &[u8]) -> io::Result<Vec<u8>> {
-    unimplemented!()
-}
-
