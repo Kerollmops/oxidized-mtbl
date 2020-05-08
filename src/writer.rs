@@ -64,7 +64,6 @@ pub struct Writer<W> {
     opt: WriterOptions,
     last_key: Vec<u8>,
     last_offset: u64,
-    closed: bool,
     pending_index_entry: bool,
     pending_offset: u64,
 }
@@ -92,13 +91,10 @@ impl<W: io::Write> Writer<W> {
             data: BlockBuilder::new(opt.block_restart_interval),
             index: BlockBuilder::new(opt.block_restart_interval),
             pending_index_entry: false,
-            closed: false,
         })
     }
 
     pub fn add(&mut self, key: &[u8], val: &[u8]) -> io::Result<()> {
-        assert!(!self.closed, "writer is closed");
-
         if self.metadata.count_entries > 0 {
             if key <= &*self.last_key {
                 panic!("out-of-order key");
@@ -131,11 +127,12 @@ impl<W: io::Write> Writer<W> {
         Ok(())
     }
 
-    pub fn finish(&mut self) -> io::Result<()> {
-        self.flush()?;
+    pub fn finish(self) -> io::Result<()> {
+        self.into_inner().map(drop)
+    }
 
-        assert!(!self.closed);
-        self.closed = true;
+    pub fn into_inner(mut self) -> io::Result<W> {
+        self.flush()?;
 
         if self.pending_index_entry {
             let mut enc = [0; 10];
@@ -150,12 +147,12 @@ impl<W: io::Write> Writer<W> {
         // We must write exactly 512 bytes at the end to store the metadata
         let mut tbuf = [0u8; METADATA_SIZE];
         self.metadata.write_to_bytes(&mut tbuf);
-        self.writer.write_all(&tbuf)
+        self.writer.write_all(&tbuf)?;
+
+        Ok(self.writer)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        assert!(!self.closed);
-
         if self.data.is_emtpy() { return Ok(()) }
 
         assert!(!self.pending_index_entry);

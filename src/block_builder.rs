@@ -47,7 +47,7 @@ impl BlockBuilder {
 
     pub fn add(&mut self, key: &[u8], val: &[u8]) {
         assert!(self.counter <= self.block_restart_interval);
-        assert!(self.finished == false);
+        assert!(!self.finished);
 
         let mut shared = 0;
 
