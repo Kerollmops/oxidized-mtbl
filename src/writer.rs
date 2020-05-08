@@ -1,6 +1,6 @@
 use std::io::Write;
 use std::fs::File;
-use std::mem;
+use std::io;
 
 use crate::compression::CompressionType;
 use crate::Metadata;
@@ -140,7 +140,7 @@ impl Writer {
         Ok(())
     }
 
-    fn finish(&mut self) {
+    fn finish(&mut self) -> io::Result<()> {
         self.flush();
         assert!(!self.closed);
         self.closed = true;
@@ -155,7 +155,7 @@ impl Writer {
         self.m.bytes_index_block = self.write_block(&self.index.clone(), CompressionType::None) as u64;
         self.index.reset();
         let meta_bytes = self.m.as_bytes();
-        self.file.write_all(meta_bytes);
+        self.file.write_all(meta_bytes)
     }
 
     fn flush(&mut self) {

@@ -1,3 +1,5 @@
+use std::mem;
+
 #[derive(Clone)]
 pub struct BlockBuilder {
     block_restart_interval: usize,
@@ -10,16 +12,14 @@ pub struct BlockBuilder {
 
 impl BlockBuilder {
     pub fn new(block_restart_interval: usize) -> Self {
-        let mut bb = BlockBuilder {
+        BlockBuilder {
             block_restart_interval,
             buf: Vec::with_capacity(65536),
             last_key: Vec::with_capacity(256),
-            restarts: Vec::with_capacity(64),
-            counter: 0,
+            restarts: vec![0],
             finished: false,
-        };
-        bb.restarts.push(0);
-        bb
+            counter: 0,
+        }
     }
 
     pub fn reset(&mut self) {
@@ -27,8 +27,8 @@ impl BlockBuilder {
         self.last_key.clear();
         self.restarts.clear();
         self.restarts.push(0);
-        self.counter = 0;
         self.finished = false;
+        self.counter = 0;
     }
 
     pub fn is_emtpy(&self) -> bool {
@@ -36,7 +36,11 @@ impl BlockBuilder {
     }
 
     pub fn current_size_estimate(&self) -> usize {
-        unimplemented!()
+        if self.buf.len() > u32::max_value() as usize {
+            self.buf.len() + (self.restarts.len() * mem::size_of::<u64>()) + mem::size_of::<u32>()
+        } else {
+            self.buf.len() + (self.restarts.len() * mem::size_of::<u64>() / 2) + mem::size_of::<u32>()
+        }
     }
 
     pub fn add(&mut self, _key: &[u8], _val: &[u8]) {
