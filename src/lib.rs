@@ -1,3 +1,6 @@
+#[cfg(test)]
+#[macro_use] extern crate quickcheck;
+
 use compression::CompressionType;
 
 pub use self::writer::{Writer, WriterOptions};

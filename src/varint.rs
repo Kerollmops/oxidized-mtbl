@@ -100,15 +100,23 @@ pub fn varint_decode64(data: &[u8], value: &mut u64) -> usize {
 mod tests {
     use super::*;
 
-    #[test]
-    fn easy() {
-        let mut buf = [0; 10];
-        let original = 26;
+    quickcheck! {
+        fn qc_codec_u32(num: u32) -> bool {
+            let mut buf = [0; 10];
+            let mut val = 0;
+            let buf = varint_encode32(&mut buf, num);
+            varint_decode32(buf, &mut val);
 
-        let mut val = 0;
-        let buf = varint_encode64(&mut buf, original);
-        varint_decode64(buf, &mut val);
+            num == val
+        }
 
-        assert_eq!(original as u64, val);
+        fn qc_codec_u64(num: u64) -> bool {
+            let mut buf = [0; 10];
+            let mut val = 0;
+            let buf = varint_encode64(&mut buf, num);
+            varint_decode64(buf, &mut val);
+
+            num == val
+        }
     }
 }
