@@ -13,9 +13,9 @@ fn main() {
     let mut writer = Writer::new(file, Some(options)).unwrap();
 
     for i in 0..300_000 {
-        let string = format!("{:010}", i);
-        let bytes = string.as_bytes();
-        writer.add(bytes, bytes).unwrap();
+        let key = format!("{:010}", i);
+        let value = format!("{:010}", i).repeat(i / 10_000);
+        writer.add(key, value).unwrap();
     }
 
     writer.finish().unwrap();

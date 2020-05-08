@@ -91,7 +91,13 @@ impl<W: io::Write> Writer<W> {
         })
     }
 
-    pub fn add(&mut self, key: &[u8], val: &[u8]) -> io::Result<()> {
+    pub fn add<K, V>(&mut self, key: K, val: V) -> io::Result<()>
+    where K: AsRef<[u8]>,
+          V: AsRef<[u8]>,
+    {
+        let key = key.as_ref();
+        let val = val.as_ref();
+
         if self.metadata.count_entries > 0 {
             if key <= &*self.last_key {
                 panic!("out-of-order key");
