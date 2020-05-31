@@ -15,11 +15,13 @@ pub use compression::CompressionType;
 pub use self::metadata::Metadata;
 pub use self::reader::{Reader, ReaderOptions, ReaderGet, ReaderIter};
 pub use self::writer::{Writer, WriterOptions};
+pub use self::merger::{Merger, MergerOptions, MergerIter};
 
 mod block;
 mod block_builder;
 mod compression;
 mod error;
+mod merger;
 mod metadata;
 mod reader;
 mod varint;
