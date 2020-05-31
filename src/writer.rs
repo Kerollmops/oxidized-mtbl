@@ -251,3 +251,35 @@ fn bytes_shortest_separator(start: &mut Vec<u8>, limit: &[u8]) {
 
     assert!(bytes_compare(&start, limit) < 0);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Reader, ReaderOptions};
+
+    #[test]
+    fn empty() {
+        let writer = Writer::memory(None);
+        let vec = writer.into_inner().unwrap();
+
+        let reader = Reader::new(&vec, ReaderOptions::default()).unwrap();
+        assert!(reader.iter().is_err());
+    }
+
+    #[test]
+    fn one_key() {
+        let mut writer = Writer::memory(None);
+        writer.add("hello", "I'm the one").unwrap();
+
+        let vec = writer.into_inner().unwrap();
+        let reader = Reader::new(&vec, ReaderOptions::default()).unwrap();
+
+        let mut count = 0;
+        let mut iter = reader.iter().unwrap();
+        while let Some(_) = iter.next() {
+            count += 1;
+        }
+
+        assert_eq!(count, 1);
+    }
+}

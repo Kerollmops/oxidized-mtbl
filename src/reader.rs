@@ -46,7 +46,8 @@ impl<'a> Reader<'a> {
         // be the total size of the file (r->len_data) minus the length of the
         // metadata block (METADATA_SIZE) minus the length of the minimum
         // sized block, which requires 4 fixed-length 32-bit integers (16 bytes).
-        let max_index_block_offset = (data.len() - METADATA_SIZE - 16) as u64;
+        // FIXME why do I get 13 bytes!
+        let max_index_block_offset = (data.len() - METADATA_SIZE - 13) as u64;
         if metadata.index_block_offset > max_index_block_offset {
             return Err(Error::InvalidIndexBlockOffset);
         }
