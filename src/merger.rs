@@ -1,5 +1,6 @@
 use std::collections::BinaryHeap;
 use std::cmp::{Reverse, Ordering};
+use std::mem;
 
 use crate::{Reader, ReaderIter};
 
@@ -70,7 +71,8 @@ pub struct MergerIter<'r, 'a, MF> {
     merger: &'r Merger<'a, MF>,
     heap: BinaryHeap<Reverse<Entry<'r, 'a>>>,
     cur_key: Vec<u8>,
-    cur_val: Vec<u8>,
+    cur_vals: Vec<Vec<u8>>,
+    merged_val: Vec<u8>,
     finished: bool,
     pending: bool,
 }
@@ -104,8 +106,9 @@ impl<'r, 'a, MF> Merger<'a, MF> {
         MergerIter {
             merger: self,
             heap,
-            cur_key: Vec::with_capacity(256),
-            cur_val: Vec::with_capacity(256),
+            cur_key: Vec::new(),
+            cur_vals: Vec::new(),
+            merged_val: Vec::new(),
             finished: false,
             pending: false,
         }
@@ -113,7 +116,7 @@ impl<'r, 'a, MF> Merger<'a, MF> {
 }
 
 impl<MF> MergerIter<'_, '_, MF>
-where MF: Fn(&[u8], &[u8], &[u8]) -> Option<Vec<u8>>
+where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
 {
     pub fn next(&mut self) -> Option<(&[u8], &[u8])> {
         if self.finished {
@@ -121,7 +124,7 @@ where MF: Fn(&[u8], &[u8], &[u8]) -> Option<Vec<u8>>
         }
 
         self.cur_key.clear();
-        self.cur_val.clear();
+        self.cur_vals.clear();
 
         loop {
             let mut entry = loop {
@@ -141,36 +144,23 @@ where MF: Fn(&[u8], &[u8], &[u8]) -> Option<Vec<u8>>
             };
 
             if self.cur_key.is_empty() {
-                self.cur_val.clear();
                 self.cur_key.extend_from_slice(&entry.0.key);
-                self.cur_val.extend_from_slice(&entry.0.val);
+                self.cur_vals.clear();
                 self.pending = true;
-                let _res = entry.0.fill();
-                // if res {
-                //     heap_replace(it->h, e);
-                // }
-                continue;
             }
 
             if self.cur_key == entry.0.key {
-                let mut merged_val = match (self.merger.opt.merge)(&self.cur_key, &self.cur_val, &entry.0.val) {
-                    Some(merged_val) => merged_val,
-                    None => panic!("Oups merge abort"),
-                };
-                self.cur_val.clear();
-                self.cur_val.append(&mut merged_val);
+                self.cur_vals.push(mem::take(&mut entry.0.val));
                 let _res = entry.0.fill();
-                // if res {
-                //     heap_replace(it->h, e);
-                // }
             } else {
                 break;
             }
         }
 
         if self.pending {
+            self.merged_val = (self.merger.opt.merge)(&self.cur_key, &self.cur_vals).expect("merge abort");
             self.pending = false;
-            Some((&self.cur_key, &self.cur_val))
+            Some((&self.cur_key, &self.merged_val))
         } else {
             None
         }
@@ -184,10 +174,10 @@ mod tests {
 
     #[test]
     fn easy() {
-        fn merge(_k: &[u8], v0: &[u8], v1: &[u8]) -> Option<Vec<u8>> {
-            let mut out = Vec::with_capacity(v0.len() + v1.len());
-            out.extend_from_slice(&v0);
-            out.extend_from_slice(&v1);
+        fn merge(_key: &[u8], values: &[Vec<u8>]) -> Option<Vec<u8>> {
+            let len = values.iter().map(|v| v.len()).sum::<usize>();
+            let mut out = Vec::with_capacity(len);
+            values.iter().for_each(|v| out.extend_from_slice(v));
             Some(out)
         }
 
