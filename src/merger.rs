@@ -126,7 +126,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         self.cur_key.clear();
         self.cur_vals.clear();
 
-        loop {
+        'outer: loop {
             let mut entry = loop {
                 match self.heap.peek() {
                     Some(e) => {
@@ -138,7 +138,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
                     },
                     None => {
                         self.finished = true;
-                        return None
+                        break 'outer;
                     }
                 }
             };
