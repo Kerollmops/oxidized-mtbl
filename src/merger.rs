@@ -92,7 +92,7 @@ impl<'r, 'a, MF> Merger<'a, MF> {
         Merger { sources, opt }
     }
 
-    pub fn iter(&'r mut self) -> MergerIter<'r, 'a, MF> {
+    pub fn merge_iter(&'r mut self) -> MergerIter<'r, 'a, MF> {
         let mut heap = BinaryHeap::new();
         for source in &self.sources {
             if let Ok(iter) = source.iter() {
@@ -109,6 +109,26 @@ impl<'r, 'a, MF> Merger<'a, MF> {
             cur_key: Vec::new(),
             cur_vals: Vec::new(),
             merged_val: Vec::new(),
+            finished: false,
+            pending: false,
+        }
+    }
+
+    pub fn iter(&mut self) -> MultiIter {
+        let mut heap = BinaryHeap::new();
+        for source in &self.sources {
+            if let Ok(iter) = source.iter() {
+                let entry = Entry::new(iter);
+                if !entry.finished {
+                    heap.push(Reverse(entry));
+                }
+            }
+        }
+
+        MultiIter {
+            heap,
+            cur_key: Vec::new(),
+            cur_vals: Vec::new(),
             finished: false,
             pending: false,
         }
@@ -167,6 +187,65 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
     }
 }
 
+pub struct MultiIter<'r, 'a> {
+    heap: BinaryHeap<Reverse<Entry<'r, 'a>>>,
+    cur_key: Vec<u8>,
+    cur_vals: Vec<Vec<u8>>,
+    finished: bool,
+    pending: bool,
+}
+
+impl Iterator for MultiIter<'_, '_> {
+    type Item = (Vec<u8>, Vec<Vec<u8>>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
+
+        self.cur_key.clear();
+        self.cur_vals.clear();
+
+        'outer: loop {
+            let mut entry = loop {
+                match self.heap.peek() {
+                    Some(e) => {
+                        if e.0.finished {
+                            self.heap.pop();
+                        } else {
+                            break self.heap.peek_mut().unwrap();
+                        }
+                    },
+                    None => {
+                        self.finished = true;
+                        break 'outer;
+                    }
+                }
+            };
+
+            if self.cur_key.is_empty() {
+                self.cur_key.extend_from_slice(&entry.0.key);
+                self.cur_vals.clear();
+                self.pending = true;
+            }
+
+            if self.cur_key == entry.0.key {
+                self.cur_vals.push(mem::take(&mut entry.0.val));
+                let _res = entry.0.fill();
+            } else {
+                break;
+            }
+        }
+
+        if self.pending {
+            self.pending = false;
+            Some((mem::take(&mut self.cur_key), mem::take(&mut self.cur_vals)))
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,7 +279,7 @@ mod tests {
         let opt = MergerOptions { merge };
         let mut merger = Merger::new(sources, opt);
 
-        let mut iter = merger.iter();
+        let mut iter = merger.merge_iter();
         let mut prev_key = vec![];
         while let Some((k, _v)) = iter.next() {
             assert!(&*prev_key < k, "order is not respected");
