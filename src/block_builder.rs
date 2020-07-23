@@ -33,7 +33,7 @@ impl BlockBuilder {
         self.counter = 0;
     }
 
-    pub fn is_emtpy(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.buf.is_empty()
     }
 

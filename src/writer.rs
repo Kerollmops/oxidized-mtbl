@@ -119,7 +119,7 @@ impl<W: io::Write> Writer<W> {
 
         if self.pending_index_entry {
             let mut enc = [0; 10];
-            assert!(self.data.is_emtpy());
+            assert!(self.data.is_empty());
             bytes_shortest_separator(&mut self.last_key, key);
             self.index.add(&self.last_key, varint_encode64(&mut enc, self.last_offset));
             self.pending_index_entry = false;
@@ -169,7 +169,7 @@ impl<W: io::Write> Writer<W> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        if self.data.is_emtpy() { return Ok(()) }
+        if self.data.is_empty() { return Ok(()) }
 
         assert!(!self.pending_index_entry);
         self.metadata.bytes_data_blocks += write_block(
