@@ -9,7 +9,7 @@ use crate::compression::decompress;
 use crate::error::Error;
 use crate::METADATA_SIZE;
 use crate::varint::varint_decode64;
-use crate::{bytes_compare, Metadata, FileVersion};
+use crate::{Metadata, FileVersion};
 
 enum ReaderIterType {
     Iter,
@@ -327,7 +327,7 @@ impl<'r, 'a> ReaderIter<'r, 'a> {
                 }
             }
             ReaderIterType::GetRange => {
-                if bytes_compare(key, &self.k) > 0 {
+                if key > &self.k {
                     self.valid = false;
                 }
             }

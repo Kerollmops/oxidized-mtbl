@@ -27,15 +27,6 @@ mod reader;
 mod varint;
 mod writer;
 
-fn bytes_compare(a: &[u8], b: &[u8]) -> i32 {
-    use std::cmp::Ordering;
-    match a.cmp(&b) {
-        Ordering::Less => -1,
-        Ordering::Equal => 0,
-        Ordering::Greater => 1,
-    }
-}
-
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u32)]
 pub enum FileVersion {

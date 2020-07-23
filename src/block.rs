@@ -5,7 +5,6 @@ use std::sync::Arc;
 use byteorder::{ByteOrder, LittleEndian};
 
 use crate::varint::varint_decode32;
-use crate::bytes_compare;
 
 #[derive(Clone)]
 pub struct Block<'a> {
@@ -171,7 +170,7 @@ impl<'a> BlockIter<'a> {
             }
 
             let key = &self.block.data[key_offset..key_offset + non_shared as usize];
-            if bytes_compare(key, target) < 0 {
+            if key < target {
                 // key at "mid" is smaller than "target", therefore all
                 // keys before "mid" are uninteresting
                 left = mid;
@@ -188,7 +187,7 @@ impl<'a> BlockIter<'a> {
             if !self.parse_next_key() {
                 return;
             }
-            if bytes_compare(&self.key, target) >= 0 {
+            if self.key.as_slice() >= target {
                 return;
             }
         }

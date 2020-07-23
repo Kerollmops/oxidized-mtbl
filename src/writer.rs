@@ -6,7 +6,7 @@ use crate::block_builder::BlockBuilder;
 use crate::compression::compress;
 use crate::compression::CompressionType;
 use crate::varint::varint_encode64;
-use crate::{bytes_compare, FileVersion, Metadata};
+use crate::{FileVersion, Metadata};
 
 use crate::{DEFAULT_COMPRESSION_TYPE, DEFAULT_COMPRESSION_LEVEL};
 use crate::{DEFAULT_BLOCK_SIZE, DEFAULT_BLOCK_RESTART_INTERVAL};
@@ -249,7 +249,7 @@ fn bytes_shortest_separator(start: &mut Vec<u8>, limit: &[u8]) {
         }
     }
 
-    assert!(bytes_compare(&start, limit) < 0);
+    assert!(start.as_slice() < limit);
 }
 
 #[cfg(test)]
