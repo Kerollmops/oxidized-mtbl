@@ -12,7 +12,7 @@ fn main() {
     let options = ReaderOptions::default();
     let reader = Reader::new(&content[..], options).unwrap();
 
-    let mut iter = reader.iter().unwrap();
+    let mut iter = reader.into_iter().unwrap();
 
     while let Some((key, val)) = iter.next() {
         let key = str::from_utf8(key).unwrap();

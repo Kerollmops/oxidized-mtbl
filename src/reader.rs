@@ -9,7 +9,7 @@ use crate::compression::decompress;
 use crate::error::Error;
 use crate::METADATA_SIZE;
 use crate::varint::varint_decode64;
-use crate::{Metadata, FileVersion};
+use crate::{BytesView, FileVersion, Metadata};
 
 enum ReaderIterType {
     Iter,
@@ -24,21 +24,21 @@ pub struct ReaderOptions {
     pub madvise_random: bool,
 }
 
-pub struct Reader<'a> {
+pub struct Reader<A> {
     metadata: Metadata,
-    data: &'a [u8],
+    data: BytesView<A>,
     _opt: ReaderOptions,
-    index: Arc<Block<'a>>,
+    index: Arc<Block<A>>,
 }
 
-impl<'a> Reader<'a> {
-    pub fn new(data: &'a [u8], _opt: ReaderOptions) -> Result<Reader<'a>, Error> {
-        if data.len() < METADATA_SIZE {
+impl<A: AsRef<[u8]>> Reader<A> {
+    pub fn new(data: A, _opt: ReaderOptions) -> Result<Reader<A>, Error> {
+        if data.as_ref().len() < METADATA_SIZE {
             return Err(Error::InvalidMetadataSize)
         }
 
-        let metadata_offset = data.len() - METADATA_SIZE;
-        let metadata_bytes = &data[metadata_offset..metadata_offset + METADATA_SIZE];
+        let metadata_offset = data.as_ref().len() - METADATA_SIZE;
+        let metadata_bytes = &data.as_ref()[metadata_offset..metadata_offset + METADATA_SIZE];
         let metadata = Metadata::read_from_bytes(metadata_bytes)?;
 
         // Sanitize the index block offset.
@@ -47,38 +47,37 @@ impl<'a> Reader<'a> {
         // metadata block (METADATA_SIZE) minus the length of the minimum
         // sized block, which requires 4 fixed-length 32-bit integers (16 bytes).
         // FIXME why do I get 13 bytes!
-        let max_index_block_offset = (data.len() - METADATA_SIZE - 13) as u64;
+        let max_index_block_offset = (data.as_ref().len() - METADATA_SIZE - 13) as u64;
         if metadata.index_block_offset > max_index_block_offset {
             return Err(Error::InvalidIndexBlockOffset);
         }
-
-        // reader_init_madvise(r);
 
         let index_len_len: usize;
         let index_len: usize;
 
         if metadata.file_version == FileVersion::FormatV1 {
             index_len_len = mem::size_of::<u32>();
-            index_len = LittleEndian::read_u32(&data[metadata.index_block_offset as usize..]) as usize;
+            index_len = LittleEndian::read_u32(&data.as_ref()[metadata.index_block_offset as usize..]) as usize;
         } else {
             let mut tmp = 0;
-            index_len_len = varint_decode64(&data[metadata.index_block_offset as usize..], &mut tmp);
+            index_len_len = varint_decode64(&data.as_ref()[metadata.index_block_offset as usize..], &mut tmp);
             index_len = tmp as usize;
             if index_len as u64 != tmp {
                 return Err(Error::InvalidIndexLength);
             }
         }
 
-        let index_data = &data[metadata.index_block_offset as usize + index_len_len + mem::size_of::<u32>()..];
-        let index_data = &index_data[..index_len];
+        let start = metadata.index_block_offset as usize + index_len_len + mem::size_of::<u32>();
+        let data = BytesView::from(data);
+        let index_data = data.slice(start, index_len);
 
         #[cfg(feature = "checksum")] {
         if _opt.verify_checksums {
-            let index_crc = LittleEndian::read_u32(&data[metadata.index_block_offset as usize + index_len_len..]);
-            assert_eq!(index_crc, crc32c::crc32c(index_data));
+            let index_crc = LittleEndian::read_u32(&data.as_ref()[metadata.index_block_offset as usize + index_len_len..]);
+            assert_eq!(index_crc, crc32c::crc32c(index_data.as_ref()));
         } }
 
-        let index = Block::init(Cow::Borrowed(index_data));
+        let index = Block::init(index_data).unwrap();
         let index = Arc::new(index);
 
         Ok(Reader { metadata, data, _opt, index })
@@ -88,29 +87,29 @@ impl<'a> Reader<'a> {
         &self.metadata
     }
 
-    pub fn get<'r>(&'r self, key: &[u8]) -> Result<ReaderGet<'a>, ()> {
-        let mut iter = ReaderIter::new_get(self, key)?;
+    pub fn get(self, key: &[u8]) -> Result<ReaderIntoGet<A>, ()> {
+        let mut iter = ReaderIntoIter::new_get(self, key)?;
         iter.next().ok_or(())?;
-        Ok(ReaderGet::new(iter.bi))
+        Ok(ReaderIntoGet::new(iter.bi))
     }
 
-    pub fn iter<'r>(&'r self) -> Result<ReaderIter<'r, 'a>, ()> {
-        ReaderIter::new(self)
+    pub fn into_iter(self) -> Result<ReaderIntoIter<A>, ()> {
+        ReaderIntoIter::new(self)
     }
 
-    pub fn iter_from<'r>(&'r self, start: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
-        ReaderIter::new_from(self, start)
+    pub fn iter_from(self, start: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+        ReaderIntoIter::new_from(self, start)
     }
 
-    pub fn iter_prefix<'r>(&'r self, prefix: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
-        ReaderIter::new_get_prefix(self, prefix)
+    pub fn iter_prefix(self, prefix: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+        ReaderIntoIter::new_get_prefix(self, prefix)
     }
 
-    pub fn iter_range<'r>(&'r self, start: &[u8], end: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
-        ReaderIter::new_get_range(self, start, end)
+    pub fn iter_range(self, start: &[u8], end: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+        ReaderIntoIter::new_get_range(self, start, end)
     }
 
-    fn block(&self, offset: usize) -> Block<'a> {
+    fn block(&self, offset: usize) -> Block<A> {
         assert!(offset < self.data.len());
 
         let raw_contents_size_len: usize;
@@ -118,28 +117,34 @@ impl<'a> Reader<'a> {
 
         if self.metadata.file_version == FileVersion::FormatV1 {
             raw_contents_size_len = mem::size_of::<u32>();
-            raw_contents_size = LittleEndian::read_u32(&self.data[offset..]) as usize;
+            raw_contents_size = LittleEndian::read_u32(&self.data.as_ref()[offset..]) as usize;
         } else {
             let mut tmp = 0;
-            raw_contents_size_len = varint_decode64(&self.data[offset..], &mut tmp);
+            raw_contents_size_len = varint_decode64(&self.data.as_ref()[offset..], &mut tmp);
             raw_contents_size = tmp as usize;
             assert_eq!(raw_contents_size as u64, tmp);
         }
-        let raw_contents = &self.data[offset + raw_contents_size_len + mem::size_of::<u32>()..];
-        let raw_contents = &raw_contents[..raw_contents_size];
+
+        let raw_start = offset + raw_contents_size_len + mem::size_of::<u32>();
+        let raw_contents = &self.data.as_ref()[raw_start..raw_contents_size];
 
         #[cfg(feature = "checksum")] {
         if self._opt.verify_checksums {
-            let block_crc = LittleEndian::read_u32(&self.data[offset + raw_contents_size_len..]);
+            let block_crc = LittleEndian::read_u32(&self.data.as_ref()[offset + raw_contents_size_len..]);
             let calc_crc = crc32c::crc32c(raw_contents);
             assert_eq!(block_crc, calc_crc);
         } }
 
         let data = decompress(self.metadata.compression_algorithm, raw_contents).unwrap();
-        Block::init(data)
+        let data = match data {
+            Cow::Borrowed(_) => self.data.slice(raw_start, raw_contents_size),
+            Cow::Owned(bytes) => BytesView::from_bytes(bytes),
+        };
+
+        Block::init(data).unwrap()
     }
 
-    fn block_at_index<'r>(&self, index_iter: &BlockIter<'a>) -> Result<Block<'a>, ()> {
+    fn block_at_index(&self, index_iter: &BlockIter<A>) -> Result<Block<A>, ()> {
         match index_iter.get() {
             Some((_key, val)) => {
                 let mut offset = 0;
@@ -151,16 +156,16 @@ impl<'a> Reader<'a> {
     }
 }
 
-pub struct ReaderGet<'a> {
-    block: Arc<Block<'a>>,
+pub struct ReaderIntoGet<A> {
+    block: Arc<Block<A>>,
     val_offset: usize,
     val_len: usize,
 }
 
-impl<'a> ReaderGet<'a> {
-    fn new(block_iter: BlockIter<'a>) -> ReaderGet<'a> {
+impl<A> ReaderIntoGet<A> {
+    fn new(block_iter: BlockIter<A>) -> ReaderIntoGet<A> {
         let (offset, length) = block_iter.val.unwrap();
-        ReaderGet {
+        ReaderIntoGet {
             block: block_iter.block,
             val_offset: offset,
             val_len: length,
@@ -168,25 +173,25 @@ impl<'a> ReaderGet<'a> {
     }
 }
 
-impl AsRef<[u8]> for ReaderGet<'_> {
+impl<A: AsRef<[u8]>> AsRef<[u8]> for ReaderIntoGet<A> {
     fn as_ref(&self) -> &[u8] {
         &(*self.block).as_ref()[self.val_offset..self.val_offset + self.val_len]
     }
 }
 
-pub struct ReaderIter<'r, 'a> {
-    r: &'r Reader<'a>,
+pub struct ReaderIntoIter<A> {
+    r: Reader<A>,
     block_offset: u64,
-    bi: BlockIter<'a>,
-    index_iter: BlockIter<'a>,
+    bi: BlockIter<A>,
+    index_iter: BlockIter<A>,
     k: Vec<u8>,
     first: bool,
     valid: bool,
     it_type: ReaderIterType,
 }
 
-impl<'r, 'a> ReaderIter<'r, 'a> {
-    fn new(r: &'r Reader<'a>) -> Result<ReaderIter<'r, 'a>, ()> {
+impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
+    fn new(r: Reader<A>) -> Result<ReaderIntoIter<A>, ()> {
         let mut index_iter = BlockIter::init(r.index.clone());
         index_iter.seek_to_first();
 
@@ -194,7 +199,7 @@ impl<'r, 'a> ReaderIter<'r, 'a> {
         let mut bi = BlockIter::init(Arc::new(b));
         bi.seek_to_first();
 
-        Ok(ReaderIter {
+        Ok(ReaderIntoIter {
             r,
             block_offset: 0,
             bi,
@@ -206,7 +211,7 @@ impl<'r, 'a> ReaderIter<'r, 'a> {
         })
     }
 
-    fn new_from(r: &'r Reader<'a>, key: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
+    fn new_from(r: Reader<A>, key: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
         let mut index_iter = BlockIter::init(r.index.clone());
         index_iter.seek(key);
 
@@ -215,7 +220,7 @@ impl<'r, 'a> ReaderIter<'r, 'a> {
 
         bi.seek(key);
 
-        Ok(ReaderIter {
+        Ok(ReaderIntoIter {
             r,
             block_offset: 0,
             bi,
@@ -227,22 +232,22 @@ impl<'r, 'a> ReaderIter<'r, 'a> {
         })
     }
 
-    fn new_get(r: &'r Reader<'a>, key: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
-        let mut iter = ReaderIter::new_from(r, key)?;
+    fn new_get(r: Reader<A>, key: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+        let mut iter = ReaderIntoIter::new_from(r, key)?;
         iter.k.extend_from_slice(key);
         iter.it_type = ReaderIterType::Get;
         Ok(iter)
     }
 
-    fn new_get_prefix(r: &'r Reader<'a>, prefix: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
-        let mut iter = ReaderIter::new_from(r, prefix)?;
+    fn new_get_prefix(r: Reader<A>, prefix: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+        let mut iter = ReaderIntoIter::new_from(r, prefix)?;
         iter.k.extend_from_slice(prefix);
         iter.it_type = ReaderIterType::GetPrefix;
         Ok(iter)
     }
 
-    fn new_get_range(r: &'r Reader<'a>, start: &[u8], end: &[u8]) -> Result<ReaderIter<'r, 'a>, ()> {
-        let mut iter = ReaderIter::new_from(r, start)?;
+    fn new_get_range(r: Reader<A>, start: &[u8], end: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+        let mut iter = ReaderIntoIter::new_from(r, start)?;
         iter.k.extend_from_slice(end);
         iter.it_type = ReaderIterType::GetRange;
         Ok(iter)

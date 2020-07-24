@@ -263,7 +263,7 @@ mod tests {
         let vec = writer.into_inner().unwrap();
 
         let reader = Reader::new(&vec, ReaderOptions::default()).unwrap();
-        assert!(reader.iter().is_err());
+        assert!(reader.into_iter().is_err());
     }
 
     #[test]
@@ -275,7 +275,7 @@ mod tests {
         let reader = Reader::new(&vec, ReaderOptions::default()).unwrap();
 
         let mut count = 0;
-        let mut iter = reader.iter().unwrap();
+        let mut iter = reader.into_iter().unwrap();
         while let Some(_) = iter.next() {
             count += 1;
         }

@@ -2,18 +2,18 @@ use std::collections::BinaryHeap;
 use std::cmp::{Reverse, Ordering};
 use std::mem;
 
-use crate::{Reader, ReaderIter};
+use crate::{Reader, ReaderIntoIter};
 
-pub struct Entry<'r, 'a> {
+pub struct Entry<A> {
     finished: bool,
-    iter: ReaderIter<'r, 'a>,
+    iter: ReaderIntoIter<A>,
     key: Vec<u8>,
     val: Vec<u8>,
 }
 
-impl<'r, 'a> Entry<'r, 'a> {
+impl<A: AsRef<[u8]>> Entry<A> {
     // also fills the entry
-    fn new(iter: ReaderIter<'r, 'a>) -> Entry<'r, 'a> {
+    fn new(iter: ReaderIntoIter<A>) -> Entry<A> {
         let mut entry = Entry {
             finished: false,
             iter,
@@ -47,22 +47,22 @@ impl<'r, 'a> Entry<'r, 'a> {
     }
 }
 
-impl Ord for Entry<'_, '_> {
-    fn cmp(&self, other: &Entry) -> Ordering {
+impl<A: AsRef<[u8]>> Ord for Entry<A> {
+    fn cmp(&self, other: &Entry<A>) -> Ordering {
         self.key.cmp(&other.key)
     }
 }
 
-impl Eq for Entry<'_, '_> {}
+impl<A: AsRef<[u8]>> Eq for Entry<A> {}
 
-impl PartialEq for Entry<'_, '_> {
-    fn eq(&self, other: &Entry) -> bool {
+impl<A: AsRef<[u8]>> PartialEq for Entry<A> {
+    fn eq(&self, other: &Entry<A>) -> bool {
         self.key == other.key
     }
 }
 
-impl PartialOrd for Entry<'_, '_> {
-    fn partial_cmp(&self, other: &Entry) -> Option<Ordering> {
+impl<A: AsRef<[u8]>> PartialOrd for Entry<A> {
+    fn partial_cmp(&self, other: &Entry<A>) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
@@ -72,20 +72,20 @@ pub struct MergerOptions<MF> {
     // pub dupsort: DF,
 }
 
-pub struct Merger<'a, MF> {
-    sources: Vec<Reader<'a>>,
+pub struct Merger<A, MF> {
+    sources: Vec<Reader<A>>,
     opt: MergerOptions<MF>,
 }
 
-impl<'r, 'a, MF> Merger<'a, MF> {
-    pub fn new(sources: Vec<Reader<'a>>, opt: MergerOptions<MF>) -> Self {
+impl<A: AsRef<[u8]>, MF> Merger<A, MF> {
+    pub fn new(sources: Vec<Reader<A>>, opt: MergerOptions<MF>) -> Self {
         Merger { sources, opt }
     }
 
-    pub fn merge_iter(&'r mut self) -> MergerIter<'r, 'a, MF> {
+    pub fn into_merge_iter(mut self) -> MergerIter<A, MF> {
         let mut heap = BinaryHeap::new();
-        for source in &self.sources {
-            if let Ok(iter) = source.iter() {
+        for source in self.sources.drain(..) {
+            if let Ok(iter) = source.into_iter() {
                 let entry = Entry::new(iter);
                 if !entry.finished {
                     heap.push(Reverse(entry));
@@ -104,10 +104,10 @@ impl<'r, 'a, MF> Merger<'a, MF> {
         }
     }
 
-    pub fn iter(&mut self) -> MultiIter {
+    pub fn into_iter(self) -> MultiIter<A> {
         let mut heap = BinaryHeap::new();
-        for source in &self.sources {
-            if let Ok(iter) = source.iter() {
+        for source in self.sources {
+            if let Ok(iter) = source.into_iter() {
                 let entry = Entry::new(iter);
                 if !entry.finished {
                     heap.push(Reverse(entry));
@@ -125,9 +125,9 @@ impl<'r, 'a, MF> Merger<'a, MF> {
     }
 }
 
-pub struct MergerIter<'r, 'a, MF> {
-    merger: &'r Merger<'a, MF>,
-    heap: BinaryHeap<Reverse<Entry<'r, 'a>>>,
+pub struct MergerIter<A, MF> {
+    merger: Merger<A, MF>,
+    heap: BinaryHeap<Reverse<Entry<A>>>,
     cur_key: Vec<u8>,
     cur_vals: Vec<Vec<u8>>,
     merged_val: Vec<u8>,
@@ -135,8 +135,9 @@ pub struct MergerIter<'r, 'a, MF> {
     pending: bool,
 }
 
-impl<MF> MergerIter<'_, '_, MF>
-where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
+impl<A, MF> MergerIter<A, MF>
+where A: AsRef<[u8]>,
+      MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>,
 {
     pub fn next(&mut self) -> Option<(&[u8], &[u8])> {
         if self.finished {
@@ -187,15 +188,15 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
     }
 }
 
-pub struct MultiIter<'r, 'a> {
-    heap: BinaryHeap<Reverse<Entry<'r, 'a>>>,
+pub struct MultiIter<A> {
+    heap: BinaryHeap<Reverse<Entry<A>>>,
     cur_key: Vec<u8>,
     cur_vals: Vec<Vec<u8>>,
     finished: bool,
     pending: bool,
 }
 
-impl Iterator for MultiIter<'_, '_> {
+impl<A: AsRef<[u8]>> Iterator for MultiIter<A> {
     type Item = (Vec<u8>, Vec<Vec<u8>>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -272,14 +273,14 @@ mod tests {
             vecs.push(vec);
         }
 
-        let sources = vecs.iter()
-            .map(|v| Reader::new(v.as_ref(), ReaderOptions::default()).unwrap())
+        let sources = vecs.into_iter()
+            .map(|v| Reader::new(v, ReaderOptions::default()).unwrap())
             .collect();
 
         let opt = MergerOptions { merge };
         let mut merger = Merger::new(sources, opt);
 
-        let mut iter = merger.merge_iter();
+        let mut iter = merger.into_merge_iter();
         let mut prev_key = vec![];
         while let Some((k, _v)) = iter.next() {
             assert!(&*prev_key < k, "order is not respected");

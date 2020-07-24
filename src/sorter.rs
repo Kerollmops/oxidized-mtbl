@@ -6,6 +6,7 @@ use memmap::Mmap;
 
 use crate::{Writer, WriterOptions, CompressionType};
 use crate::{Merger, MergerOptions, MergerIter};
+use crate::{Reader, ReaderOptions};
 use crate::INITIAL_SORTER_VEC_SIZE;
 
 pub struct SorterOptions<MF> {
@@ -125,13 +126,16 @@ where MF: FnMut(&[u8], &[Vec<u8>]) -> Vec<u8>,
         Ok(())
     }
 
-    pub fn write<W>(mut self, mut writer: &mut Writer<W>) -> io::Result<()> {
+    pub fn write<W>(self, _writer: &mut Writer<W>) -> io::Result<()> {
         todo!()
     }
 
-    pub fn into_iter(mut self) -> io::Result<MergerIter<MF>> {
-        let sources = self.chunks.into_iter().map(|f| unsafe { Mmap::map(&f) }).collect();
+    pub fn into_iter(self) -> io::Result<MergerIter<Mmap, MF>> {
+        let sources: io::Result<Vec<_>> = self.chunks.into_iter().map(|f| unsafe {
+            let mmap = Mmap::map(&f)?;
+            Ok(Reader::new(mmap, ReaderOptions::default()).unwrap())
+        }).collect();
         let opt = MergerOptions { merge: self.options.merge };
-        Ok(Merger::new(sources, opt).merge_iter())
+        Ok(Merger::new(sources?, opt).into_merge_iter())
     }
 }
