@@ -3,10 +3,17 @@
 
 const DEFAULT_BLOCK_RESTART_INTERVAL: usize = 16;
 const DEFAULT_BLOCK_SIZE: u64 = 8192;
+const MIN_BLOCK_SIZE: u64 = 1024;
+
 const DEFAULT_COMPRESSION_LEVEL: u32 = 0;
 const DEFAULT_COMPRESSION_TYPE: CompressionType = CompressionType::None;
+
+const DEFAULT_SORTER_MEMORY: usize = 1_073_741_824; // 1GB
+const MIN_SORTER_MEMORY: usize = 10_485_760; // 10MB
+const INITIAL_SORTER_VEC_SIZE: usize = 131_072;
+
 const METADATA_SIZE: usize = 512;
-const MIN_BLOCK_SIZE: u64 = 1024;
+
 const MAGIC: u32 = 0x4D54424C;
 const MAGIC_V1: u32 = 0x77846676;
 
@@ -16,6 +23,7 @@ pub use self::metadata::Metadata;
 pub use self::reader::{Reader, ReaderOptions, ReaderGet, ReaderIter};
 pub use self::writer::{Writer, WriterOptions};
 pub use self::merger::{Merger, MergerOptions, MergerIter};
+pub use self::sorter::{Sorter, SorterOptions};
 
 mod block;
 mod block_builder;
@@ -24,6 +32,7 @@ mod error;
 mod merger;
 mod metadata;
 mod reader;
+mod sorter;
 mod varint;
 mod writer;
 

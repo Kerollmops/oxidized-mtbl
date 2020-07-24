@@ -67,16 +67,6 @@ impl PartialOrd for Entry<'_, '_> {
     }
 }
 
-pub struct MergerIter<'r, 'a, MF> {
-    merger: &'r Merger<'a, MF>,
-    heap: BinaryHeap<Reverse<Entry<'r, 'a>>>,
-    cur_key: Vec<u8>,
-    cur_vals: Vec<Vec<u8>>,
-    merged_val: Vec<u8>,
-    finished: bool,
-    pending: bool,
-}
-
 pub struct MergerOptions<MF> {
     pub merge: MF,
     // pub dupsort: DF,
@@ -133,6 +123,16 @@ impl<'r, 'a, MF> Merger<'a, MF> {
             pending: false,
         }
     }
+}
+
+pub struct MergerIter<'r, 'a, MF> {
+    merger: &'r Merger<'a, MF>,
+    heap: BinaryHeap<Reverse<Entry<'r, 'a>>>,
+    cur_key: Vec<u8>,
+    cur_vals: Vec<Vec<u8>>,
+    merged_val: Vec<u8>,
+    finished: bool,
+    pending: bool,
 }
 
 impl<MF> MergerIter<'_, '_, MF>
