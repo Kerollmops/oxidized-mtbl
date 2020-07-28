@@ -42,7 +42,6 @@ pub struct Sorter<MF> {
     entries: Vec<Entry>,
     /// The number of bytes allocated by the entries.
     entry_bytes: usize,
-    iterating: bool,
     options: SorterOptions<MF>,
 }
 
@@ -52,21 +51,18 @@ impl<MF> Sorter<MF> {
             chunks: Vec::new(),
             entries: Vec::with_capacity(INITIAL_SORTER_VEC_SIZE),
             entry_bytes: 0,
-            iterating: false,
             options,
         }
     }
 }
 
 impl<MF> Sorter<MF>
-where MF: FnMut(&[u8], &[Vec<u8>]) -> Vec<u8>,
+where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
 {
     pub fn add<K, V>(&mut self, key: K, val: V) -> io::Result<()>
     where K: AsRef<[u8]>,
           V: AsRef<[u8]>,
     {
-        assert!(!self.iterating);
-
         let key = key.as_ref();
         let val = val.as_ref();
 
@@ -103,7 +99,7 @@ where MF: FnMut(&[u8], &[Vec<u8>]) -> Vec<u8>,
                     if key == &entry.key() {
                         vals.push(entry.val().to_vec());
                     } else {
-                        let merged_val = (self.options.merge)(&key, &vals);
+                        let merged_val = (self.options.merge)(&key, &vals).unwrap();
                         writer.add(&key, &merged_val)?;
                         key.clear();
                         vals.clear();
@@ -115,7 +111,7 @@ where MF: FnMut(&[u8], &[Vec<u8>]) -> Vec<u8>,
         }
 
         if let Some((key, vals)) = current.take() {
-            let merged_val = (self.options.merge)(&key, &vals);
+            let merged_val = (self.options.merge)(&key, &vals).unwrap();
             writer.add(&key, &merged_val)?;
         }
 
@@ -126,8 +122,12 @@ where MF: FnMut(&[u8], &[Vec<u8>]) -> Vec<u8>,
         Ok(())
     }
 
-    pub fn write<W>(self, _writer: &mut Writer<W>) -> io::Result<()> {
-        todo!()
+    pub fn write<W: io::Write>(self, writer: &mut Writer<W>) -> io::Result<()> {
+        let mut iter = self.into_iter()?;
+        while let Some((key, val)) = iter.next() {
+            writer.add(key, val)?;
+        }
+        Ok(())
     }
 
     pub fn into_iter(self) -> io::Result<MergerIter<Mmap, MF>> {
