@@ -157,7 +157,7 @@ mod tests {
 
         let opt = SorterOptions {
             max_memory: 1024*1024*1024,
-            chunk_compression: CompressionType::None,
+            chunk_compression: CompressionType::Snappy,
             merge,
         };
         let mut sorter = Sorter::new(opt);

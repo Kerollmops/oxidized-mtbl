@@ -126,7 +126,7 @@ impl<A: AsRef<[u8]>> Reader<A> {
         }
 
         let raw_start = offset + raw_contents_size_len + mem::size_of::<u32>();
-        let raw_contents = &self.data.as_ref()[raw_start..raw_contents_size];
+        let raw_contents = &self.data.as_ref()[raw_start..raw_start + raw_contents_size];
 
         #[cfg(feature = "checksum")] {
         if self._opt.verify_checksums {
