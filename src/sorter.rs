@@ -130,12 +130,16 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         Ok(())
     }
 
-    pub fn into_iter(self) -> io::Result<MergerIter<Mmap, MF>> {
+    pub fn into_iter(mut self) -> io::Result<MergerIter<Mmap, MF>> {
+        // Flush the pending unordered entries.
+        self.write_chunk()?;
+
         let sources: io::Result<Vec<_>> = self.chunks.into_iter().map(|f| unsafe {
             let mmap = Mmap::map(&f)?;
             Ok(Reader::new(mmap, ReaderOptions::default()).unwrap())
         }).collect();
         let opt = MergerOptions { merge: self.options.merge };
+
         Ok(Merger::new(sources?, opt).into_merge_iter())
     }
 }
