@@ -1,6 +1,6 @@
 use std::mem;
 
-use byteorder::{LittleEndian, ByteOrder, WriteBytesExt};
+use byteorder::{LittleEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 
 use crate::compression::CompressionType;
 use crate::error::Error;
@@ -33,16 +33,16 @@ impl Metadata {
         };
 
         let mut b = bytes;
-        let index_block_offset = LittleEndian::read_u64(b); b = &b[8..];
-        let data_block_size = LittleEndian::read_u64(b); b = &b[8..];
-        let compression_algorithm = LittleEndian::read_u64(b); b = &b[8..];
+        let index_block_offset = b.read_u64::<LittleEndian>().unwrap();
+        let data_block_size = b.read_u64::<LittleEndian>().unwrap();
+        let compression_algorithm = b.read_u64::<LittleEndian>().unwrap();
         let compression_algorithm = CompressionType::from_u64(compression_algorithm).ok_or(Error::InvalidCompressionAlgorithm)?;
-        let count_entries = LittleEndian::read_u64(b); b = &b[8..];
-        let count_data_blocks = LittleEndian::read_u64(b); b = &b[8..];
-        let bytes_data_blocks = LittleEndian::read_u64(b); b = &b[8..];
-        let bytes_index_block = LittleEndian::read_u64(b); b = &b[8..];
-        let bytes_keys = LittleEndian::read_u64(b); b = &b[8..];
-        let bytes_values = LittleEndian::read_u64(b);
+        let count_entries = b.read_u64::<LittleEndian>().unwrap();
+        let count_data_blocks = b.read_u64::<LittleEndian>().unwrap();
+        let bytes_data_blocks = b.read_u64::<LittleEndian>().unwrap();
+        let bytes_index_block = b.read_u64::<LittleEndian>().unwrap();
+        let bytes_keys = b.read_u64::<LittleEndian>().unwrap();
+        let bytes_values = b.read_u64::<LittleEndian>().unwrap();
 
         Ok(Metadata {
             file_version,
