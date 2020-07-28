@@ -11,6 +11,7 @@ use crate::INITIAL_SORTER_VEC_SIZE;
 
 pub struct SorterOptions<MF> {
     pub max_memory: usize,
+    pub chunk_compression: CompressionType,
     pub merge: MF,
 }
 
@@ -80,7 +81,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
 
     fn write_chunk(&mut self) -> io::Result<()> {
         let mut options = WriterOptions::default();
-        // options.set_compression_type(CompressionType::Snappy);
+        options.set_compression_type(self.options.chunk_compression);
 
         let file = tempfile::tempfile()?;
         let mut writer = Writer::new(file, Some(options))?;
@@ -154,7 +155,11 @@ mod tests {
             Some(vals.iter().flatten().cloned().collect())
         }
 
-        let opt = SorterOptions { max_memory: 1024*1024*1024, merge };
+        let opt = SorterOptions {
+            max_memory: 1024*1024*1024,
+            chunk_compression: CompressionType::None,
+            merge,
+        };
         let mut sorter = Sorter::new(opt);
 
         sorter.add(b"hello", "kiki").unwrap();
