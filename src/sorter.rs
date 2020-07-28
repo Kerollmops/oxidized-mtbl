@@ -80,7 +80,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
 
     fn write_chunk(&mut self) -> io::Result<()> {
         let mut options = WriterOptions::default();
-        options.set_compression_type(CompressionType::Snappy);
+        // options.set_compression_type(CompressionType::Snappy);
 
         let file = tempfile::tempfile()?;
         let mut writer = Writer::new(file, Some(options))?;
@@ -141,5 +141,41 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         let opt = MergerOptions { merge: self.options.merge };
 
         Ok(Merger::new(sources?, opt).into_merge_iter())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple() {
+        fn merge(_key: &[u8], vals: &[Vec<u8>]) -> Option<Vec<u8>> {
+            Some(vals.iter().flatten().cloned().collect())
+        }
+
+        let opt = SorterOptions { max_memory: 1024*1024*1024, merge };
+        let mut sorter = Sorter::new(opt);
+
+        sorter.add(b"hello", "kiki").unwrap();
+        sorter.add(b"abstract", "lol").unwrap();
+        sorter.add(b"allo", "lol").unwrap();
+        sorter.add(b"abstract", "lol").unwrap();
+
+        let mut bytes = Writer::memory(None);
+        sorter.write(&mut bytes).unwrap();
+        let bytes = bytes.into_inner().unwrap();
+
+        let opt = ReaderOptions::default();
+        let rdr = Reader::new(bytes.as_slice(), opt).unwrap();
+        let mut iter = rdr.into_iter().unwrap();
+        while let Some((key, val)) = iter.next() {
+            match key {
+                b"hello" => assert_eq!(val, b"kiki"),
+                b"abstract" => assert_eq!(val, b"lollol"),
+                b"allo" => assert_eq!(val, b"lol"),
+                _ => panic!(),
+            }
+        }
     }
 }
