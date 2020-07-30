@@ -94,6 +94,10 @@ impl<MF> Sorter<MF> {
     pub fn builder(merge: MF) -> SorterBuilder<MF> {
         SorterBuilder::new(merge)
     }
+
+    pub fn new(merge: MF) -> Sorter<MF> {
+        SorterBuilder::new(merge).build()
+    }
 }
 
 impl<MF> Sorter<MF>
