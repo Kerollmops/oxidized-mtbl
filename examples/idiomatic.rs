@@ -9,7 +9,7 @@ use oxidized_mtbl::*;
 // }
 
 fn main() -> io::Result<()> {
-    let file = File::create("first.mtbl")?;
+    let file = File::create("target/first.mtbl")?;
 
     // We create a new writer to dump a first batch of entries to disk.
     let mut wtr = WriterBuilder::new()
@@ -18,10 +18,10 @@ fn main() -> io::Result<()> {
         .block_size(1024)
         .build(file);
 
-    // wtr.insert("abc", "hello1")?;
-    // wtr.insert("bcd", "hello2")?;
-    // wtr.insert("cde", "hello3")?;
-    // wtr.insert("def", "hello4")?;
+    wtr.insert("abc", "hello1")?;
+    wtr.insert("bcd", "hello2")?;
+    wtr.insert("cde", "hello3")?;
+    wtr.insert("def", "hello4")?;
 
     // // When you can't or don't want to insert the entries in lexical order,
     // // you can use the Sorter type, it will automatically sort them for you.

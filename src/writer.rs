@@ -97,7 +97,7 @@ impl<W: io::Write> Writer<W> {
         WriterBuilder::new()
     }
 
-    pub fn add<K, V>(&mut self, key: K, val: V) -> io::Result<()>
+    pub fn insert<K, V>(&mut self, key: K, val: V) -> io::Result<()>
     where K: AsRef<[u8]>,
           V: AsRef<[u8]>,
     {
@@ -269,7 +269,7 @@ mod tests {
     #[test]
     fn one_key() {
         let mut writer = WriterBuilder::new().memory();
-        writer.add("hello", "I'm the one").unwrap();
+        writer.insert("hello", "I'm the one").unwrap();
 
         let vec = writer.into_inner().unwrap();
         let reader = Reader::new(&vec, ReaderOptions::default()).unwrap();

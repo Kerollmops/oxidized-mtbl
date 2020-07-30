@@ -229,7 +229,7 @@ mod tests {
             for i in (0 + i)..30 * (i + 1) {
                 let key = format!("{:010}", i);
                 let value = format!("{:010}", i).repeat(i / 10_000);
-                writer.add(key, value).unwrap();
+                writer.insert(key, value).unwrap();
             }
             let vec = writer.into_inner().unwrap();
             vecs.push(vec);

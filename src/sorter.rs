@@ -100,7 +100,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
                         vals.push(entry.val().to_vec());
                     } else {
                         let merged_val = (self.options.merge)(&key, &vals).unwrap();
-                        writer.add(&key, &merged_val)?;
+                        writer.insert(&key, &merged_val)?;
                         key.clear();
                         vals.clear();
                         key.extend_from_slice(entry.key());
@@ -112,7 +112,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
 
         if let Some((key, vals)) = current.take() {
             let merged_val = (self.options.merge)(&key, &vals).unwrap();
-            writer.add(&key, &merged_val)?;
+            writer.insert(&key, &merged_val)?;
         }
 
         let file = writer.into_inner()?;
@@ -125,7 +125,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
     pub fn write<W: io::Write>(self, writer: &mut Writer<W>) -> io::Result<()> {
         let mut iter = self.into_iter()?;
         while let Some((key, val)) = iter.next() {
-            writer.add(key, val)?;
+            writer.insert(key, val)?;
         }
         Ok(())
     }
