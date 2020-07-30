@@ -3,10 +3,10 @@ use std::fs::File;
 
 use oxidized_mtbl::*;
 
-// // Here we concatenate all the values that we must merge.
-// fn concat_merge(_key: &[u8], vals: Operands) -> Result<Vec<u8>, ()> {
-//     Ok(vals.flatten().collect())
-// }
+// Here we concatenate all the values that we must merge.
+fn concat_merge(_key: &[u8], vals: &[Vec<u8>]) -> Option<Vec<u8>> {
+    Some(vals.iter().cloned().flatten().collect())
+}
 
 fn main() -> io::Result<()> {
     let file = File::create("target/first.mtbl")?;
@@ -23,17 +23,17 @@ fn main() -> io::Result<()> {
     wtr.insert("cde", "hello3")?;
     wtr.insert("def", "hello4")?;
 
-    // // When you can't or don't want to insert the entries in lexical order,
-    // // you can use the Sorter type, it will automatically sort them for you.
-    // let mut srt = SorterBuilder::new(concat_merge)
-    //     .chunk_compression(Compression::Snappy)
-    //     .chunk_compression_level(5)
-    //     .memory();
+    // When you can't or don't want to insert the entries in lexical order,
+    // you can use the Sorter type, it will automatically sort them for you.
+    let mut srt = SorterBuilder::new(concat_merge)
+        .chunk_compression_type(CompressionType::Snappy)
+        .chunk_compression_level(5)
+        .build();
 
-    // srt.insert("def", "bonjour4")?;
-    // srt.insert("bcd", "bonjour2")?;
-    // srt.insert("cde", "bonjour3")?;
-    // srt.insert("abc", "bonjour1")?;
+    srt.insert("def", "bonjour4")?;
+    srt.insert("bcd", "bonjour2")?;
+    srt.insert("cde", "bonjour3")?;
+    srt.insert("abc", "bonjour1")?;
 
     // // We flush the writer to disk and retrieve the underlying file.
     // // We seek at the begining of the file and create a reader from it.
