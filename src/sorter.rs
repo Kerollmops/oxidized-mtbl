@@ -1,6 +1,6 @@
 use std::mem::size_of;
 use std::fs::File;
-use std::io;
+use std::{cmp, io};
 
 use memmap::Mmap;
 
@@ -8,11 +8,52 @@ use crate::{Writer, WriterBuilder, CompressionType};
 use crate::{Merger, MergerOptions, MergerIter};
 use crate::{Reader, ReaderOptions};
 use crate::INITIAL_SORTER_VEC_SIZE;
+use crate::{DEFAULT_COMPRESSION_LEVEL, DEFAULT_SORTER_MEMORY, MIN_SORTER_MEMORY};
 
-pub struct SorterOptions<MF> {
+#[derive(Debug, Clone, Copy)]
+pub struct SorterBuilder<MF> {
     pub max_memory: usize,
-    pub chunk_compression: CompressionType,
+    pub chunk_compression_type: CompressionType,
+    pub chunk_compression_level: u32,
     pub merge: MF,
+}
+
+impl<MF> SorterBuilder<MF> {
+    pub fn new(merge: MF) -> Self {
+        SorterBuilder {
+            max_memory: DEFAULT_SORTER_MEMORY,
+            chunk_compression_type: CompressionType::Snappy,
+            chunk_compression_level: DEFAULT_COMPRESSION_LEVEL,
+            merge,
+        }
+    }
+
+    pub fn max_memory(&mut self, memory: usize) -> &mut Self {
+        self.max_memory = cmp::max(memory, MIN_SORTER_MEMORY);
+        self
+    }
+
+    pub fn chunk_compression_type(&mut self, compression: CompressionType) -> &mut Self {
+        self.chunk_compression_type = compression;
+        self
+    }
+
+    pub fn chunk_compression_level(&mut self, level: u32) -> &mut Self {
+        self.chunk_compression_level = level;
+        self
+    }
+
+    pub fn build(self) -> Sorter<MF> {
+        Sorter {
+            chunks: Vec::new(),
+            entries: Vec::with_capacity(INITIAL_SORTER_VEC_SIZE),
+            entry_bytes: 0,
+            max_memory: self.max_memory,
+            chunk_compression_type: self.chunk_compression_type,
+            chunk_compression_level: self.chunk_compression_level,
+            merge: self.merge,
+        }
+    }
 }
 
 struct Entry {
@@ -43,17 +84,15 @@ pub struct Sorter<MF> {
     entries: Vec<Entry>,
     /// The number of bytes allocated by the entries.
     entry_bytes: usize,
-    options: SorterOptions<MF>,
+    max_memory: usize,
+    chunk_compression_type: CompressionType,
+    chunk_compression_level: u32,
+    merge: MF,
 }
 
 impl<MF> Sorter<MF> {
-    pub fn new(options: SorterOptions<MF>) -> Sorter<MF> {
-        Sorter {
-            chunks: Vec::new(),
-            entries: Vec::with_capacity(INITIAL_SORTER_VEC_SIZE),
-            entry_bytes: 0,
-            options,
-        }
+    pub fn builder(merge: MF) -> SorterBuilder<MF> {
+        SorterBuilder::new(merge)
     }
 }
 
@@ -72,7 +111,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         self.entries.push(ent);
 
         let entries_vec_size = self.entries.capacity() * size_of::<Entry>();
-        if self.entry_bytes + entries_vec_size >= self.options.max_memory {
+        if self.entry_bytes + entries_vec_size >= self.max_memory {
             self.write_chunk()?;
         }
 
@@ -82,7 +121,8 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
     fn write_chunk(&mut self) -> io::Result<()> {
         let file = tempfile::tempfile()?;
         let mut writer = WriterBuilder::new()
-            .compression_type(self.options.chunk_compression)
+            .compression_type(self.chunk_compression_type)
+            .compression_level(self.chunk_compression_level)
             .build(file);
 
         self.entries.sort_unstable_by(|a, b| a.key().cmp(&b.key()));
@@ -99,7 +139,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
                     if key == &entry.key() {
                         vals.push(entry.val().to_vec());
                     } else {
-                        let merged_val = (self.options.merge)(&key, &vals).unwrap();
+                        let merged_val = (self.merge)(&key, &vals).unwrap();
                         writer.insert(&key, &merged_val)?;
                         key.clear();
                         vals.clear();
@@ -111,7 +151,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         }
 
         if let Some((key, vals)) = current.take() {
-            let merged_val = (self.options.merge)(&key, &vals).unwrap();
+            let merged_val = (self.merge)(&key, &vals).unwrap();
             writer.insert(&key, &merged_val)?;
         }
 
@@ -138,7 +178,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
             let mmap = Mmap::map(&f)?;
             Ok(Reader::new(mmap, ReaderOptions::default()).unwrap())
         }).collect();
-        let opt = MergerOptions { merge: self.options.merge };
+        let opt = MergerOptions { merge: self.merge };
 
         Ok(Merger::new(sources?, opt).into_merge_iter())
     }
@@ -154,12 +194,9 @@ mod tests {
             Some(vals.iter().flatten().cloned().collect())
         }
 
-        let opt = SorterOptions {
-            max_memory: 1024*1024*1024,
-            chunk_compression: CompressionType::Snappy,
-            merge,
-        };
-        let mut sorter = Sorter::new(opt);
+        let mut sorter = SorterBuilder::new(merge)
+            .chunk_compression_type(CompressionType::Snappy)
+            .build();
 
         sorter.add(b"hello", "kiki").unwrap();
         sorter.add(b"abstract", "lol").unwrap();

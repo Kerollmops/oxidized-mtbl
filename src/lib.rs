@@ -10,7 +10,7 @@ const DEFAULT_COMPRESSION_TYPE: CompressionType = CompressionType::None;
 
 const DEFAULT_SORTER_MEMORY: usize = 1_073_741_824; // 1GB
 const MIN_SORTER_MEMORY: usize = 10_485_760; // 10MB
-const INITIAL_SORTER_VEC_SIZE: usize = 131_072;
+const INITIAL_SORTER_VEC_SIZE: usize = 131_072; // 128KB
 
 const METADATA_SIZE: usize = 512;
 
@@ -25,7 +25,7 @@ pub use self::metadata::Metadata;
 pub use self::reader::{Reader, ReaderOptions, ReaderIntoGet, ReaderIntoIter};
 pub use self::writer::{Writer, WriterBuilder};
 pub use self::merger::{Merger, MergerOptions, MergerIter};
-pub use self::sorter::{Sorter, SorterOptions};
+pub use self::sorter::{Sorter, SorterBuilder};
 
 mod block;
 mod block_builder;
