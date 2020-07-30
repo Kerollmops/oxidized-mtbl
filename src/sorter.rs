@@ -99,7 +99,7 @@ impl<MF> Sorter<MF> {
 impl<MF> Sorter<MF>
 where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
 {
-    pub fn add<K, V>(&mut self, key: K, val: V) -> io::Result<()>
+    pub fn insert<K, V>(&mut self, key: K, val: V) -> io::Result<()>
     where K: AsRef<[u8]>,
           V: AsRef<[u8]>,
     {
@@ -198,10 +198,10 @@ mod tests {
             .chunk_compression_type(CompressionType::Snappy)
             .build();
 
-        sorter.add(b"hello", "kiki").unwrap();
-        sorter.add(b"abstract", "lol").unwrap();
-        sorter.add(b"allo", "lol").unwrap();
-        sorter.add(b"abstract", "lol").unwrap();
+        sorter.insert(b"hello", "kiki").unwrap();
+        sorter.insert(b"abstract", "lol").unwrap();
+        sorter.insert(b"allo", "lol").unwrap();
+        sorter.insert(b"abstract", "lol").unwrap();
 
         let mut bytes = WriterBuilder::new().memory();
         sorter.write(&mut bytes).unwrap();
