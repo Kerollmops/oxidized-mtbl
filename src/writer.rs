@@ -92,9 +92,19 @@ pub struct Writer<W> {
     pending_offset: u64,
 }
 
+impl Writer<Vec<u8>> {
+    pub fn memory() -> Writer<Vec<u8>> {
+        WriterBuilder::new().memory()
+    }
+}
+
 impl<W: io::Write> Writer<W> {
     pub fn builder() -> WriterBuilder {
         WriterBuilder::new()
+    }
+
+    pub fn new(writer: W) -> Writer<W> {
+        WriterBuilder::new().build(writer)
     }
 
     pub fn insert<K, V>(&mut self, key: K, val: V) -> io::Result<()>
