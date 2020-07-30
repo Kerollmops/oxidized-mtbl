@@ -92,7 +92,6 @@ impl<A: AsRef<[u8]>, MF> Merger<A, MF> {
             cur_key: Vec::new(),
             cur_vals: Vec::new(),
             merged_val: Vec::new(),
-            finished: false,
             pending: false,
         }
     }
@@ -111,7 +110,6 @@ impl<A: AsRef<[u8]>, MF> Merger<A, MF> {
             heap,
             cur_key: Vec::new(),
             cur_vals: Vec::new(),
-            finished: false,
             pending: false,
         }
     }
@@ -123,7 +121,6 @@ pub struct MergerIter<A, MF> {
     cur_key: Vec<u8>,
     cur_vals: Vec<Vec<u8>>,
     merged_val: Vec<u8>,
-    finished: bool,
     pending: bool,
 }
 
@@ -132,22 +129,13 @@ where A: AsRef<[u8]>,
       MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>,
 {
     pub fn next(&mut self) -> Option<(&[u8], &[u8])> {
-        if self.finished {
-            return None;
-        }
-
         self.cur_key.clear();
         self.cur_vals.clear();
 
-        'outer: loop {
-            let mut entry = loop {
-                match self.heap.peek_mut() {
-                    Some(e) => break e,
-                    None => {
-                        self.finished = true;
-                        break 'outer;
-                    }
-                }
+        loop {
+            let mut entry = match self.heap.peek_mut() {
+                Some(e) => e,
+                None => break,
             };
 
             if self.cur_key.is_empty() {
@@ -180,7 +168,6 @@ pub struct MultiIter<A> {
     heap: BinaryHeap<Reverse<Entry<A>>>,
     cur_key: Vec<u8>,
     cur_vals: Vec<Vec<u8>>,
-    finished: bool,
     pending: bool,
 }
 
@@ -188,22 +175,13 @@ impl<A: AsRef<[u8]>> Iterator for MultiIter<A> {
     type Item = (Vec<u8>, Vec<Vec<u8>>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.finished {
-            return None;
-        }
-
         self.cur_key.clear();
         self.cur_vals.clear();
 
-        'outer: loop {
-            let mut entry = loop {
-                match self.heap.peek_mut() {
-                    Some(e) => break e,
-                    None => {
-                        self.finished = true;
-                        break 'outer;
-                    }
-                }
+        loop {
+            let mut entry = match self.heap.peek_mut() {
+                Some(e) => e,
+                None => break,
             };
 
             if self.cur_key.is_empty() {
