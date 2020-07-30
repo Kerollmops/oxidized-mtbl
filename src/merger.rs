@@ -1,11 +1,10 @@
-use std::collections::BinaryHeap;
+use std::collections::binary_heap::{BinaryHeap, PeekMut};
 use std::cmp::{Reverse, Ordering};
 use std::mem;
 
 use crate::{Reader, ReaderIntoIter};
 
 pub struct Entry<A> {
-    finished: bool,
     iter: ReaderIntoIter<A>,
     key: Vec<u8>,
     val: Vec<u8>,
@@ -13,19 +12,18 @@ pub struct Entry<A> {
 
 impl<A: AsRef<[u8]>> Entry<A> {
     // also fills the entry
-    fn new(iter: ReaderIntoIter<A>) -> Entry<A> {
+    fn new(iter: ReaderIntoIter<A>) -> Option<Entry<A>> {
         let mut entry = Entry {
-            finished: false,
             iter,
             key: Vec::with_capacity(256),
             val: Vec::with_capacity(256),
         };
 
         if !entry.fill() {
-            entry.finished = true;
+            return None
         }
 
-        entry
+        Some(entry)
     }
 
     fn fill(&mut self) -> bool {
@@ -34,15 +32,11 @@ impl<A: AsRef<[u8]>> Entry<A> {
 
         match self.iter.next() {
             Some((key, val)) => {
-                self.finished = false;
                 self.key.extend_from_slice(key);
                 self.val.extend_from_slice(val);
                 true
             },
-            None => {
-                self.finished = true;
-                false
-            }
+            None => false,
         }
     }
 }
@@ -86,8 +80,7 @@ impl<A: AsRef<[u8]>, MF> Merger<A, MF> {
         let mut heap = BinaryHeap::new();
         for source in self.sources.drain(..) {
             if let Ok(iter) = source.into_iter() {
-                let entry = Entry::new(iter);
-                if !entry.finished {
+                if let Some(entry) = Entry::new(iter) {
                     heap.push(Reverse(entry));
                 }
             }
@@ -108,8 +101,7 @@ impl<A: AsRef<[u8]>, MF> Merger<A, MF> {
         let mut heap = BinaryHeap::new();
         for source in self.sources {
             if let Ok(iter) = source.into_iter() {
-                let entry = Entry::new(iter);
-                if !entry.finished {
+                if let Some(entry) = Entry::new(iter) {
                     heap.push(Reverse(entry));
                 }
             }
@@ -149,14 +141,8 @@ where A: AsRef<[u8]>,
 
         'outer: loop {
             let mut entry = loop {
-                match self.heap.peek() {
-                    Some(e) => {
-                        if e.0.finished {
-                            self.heap.pop();
-                        } else {
-                            break self.heap.peek_mut().unwrap();
-                        }
-                    },
+                match self.heap.peek_mut() {
+                    Some(e) => break e,
                     None => {
                         self.finished = true;
                         break 'outer;
@@ -172,7 +158,9 @@ where A: AsRef<[u8]>,
 
             if self.cur_key == entry.0.key {
                 self.cur_vals.push(mem::take(&mut entry.0.val));
-                let _res = entry.0.fill();
+                if !entry.0.fill() {
+                    PeekMut::pop(entry);
+                }
             } else {
                 break;
             }
@@ -209,14 +197,8 @@ impl<A: AsRef<[u8]>> Iterator for MultiIter<A> {
 
         'outer: loop {
             let mut entry = loop {
-                match self.heap.peek() {
-                    Some(e) => {
-                        if e.0.finished {
-                            self.heap.pop();
-                        } else {
-                            break self.heap.peek_mut().unwrap();
-                        }
-                    },
+                match self.heap.peek_mut() {
+                    Some(e) => break e,
                     None => {
                         self.finished = true;
                         break 'outer;
@@ -232,7 +214,9 @@ impl<A: AsRef<[u8]>> Iterator for MultiIter<A> {
 
             if self.cur_key == entry.0.key {
                 self.cur_vals.push(mem::take(&mut entry.0.val));
-                let _res = entry.0.fill();
+                if !entry.0.fill() {
+                    PeekMut::pop(entry);
+                }
             } else {
                 break;
             }
@@ -278,7 +262,7 @@ mod tests {
             .collect();
 
         let opt = MergerOptions { merge };
-        let mut merger = Merger::new(sources, opt);
+        let merger = Merger::new(sources, opt);
 
         let mut iter = merger.into_merge_iter();
         let mut prev_key = vec![];
