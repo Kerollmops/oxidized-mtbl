@@ -23,7 +23,7 @@ pub use error::Error;
 pub use compression::CompressionType;
 pub use self::metadata::Metadata;
 pub use self::reader::{Reader, ReaderOptions, ReaderIntoGet, ReaderIntoIter};
-pub use self::writer::{Writer, WriterOptions};
+pub use self::writer::{Writer, WriterBuilder};
 pub use self::merger::{Merger, MergerOptions, MergerIter};
 pub use self::sorter::{Sorter, SorterOptions};
 

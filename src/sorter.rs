@@ -4,7 +4,7 @@ use std::io;
 
 use memmap::Mmap;
 
-use crate::{Writer, WriterOptions, CompressionType};
+use crate::{Writer, WriterBuilder, CompressionType};
 use crate::{Merger, MergerOptions, MergerIter};
 use crate::{Reader, ReaderOptions};
 use crate::INITIAL_SORTER_VEC_SIZE;
@@ -80,11 +80,10 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
     }
 
     fn write_chunk(&mut self) -> io::Result<()> {
-        let mut options = WriterOptions::default();
-        options.set_compression_type(self.options.chunk_compression);
-
         let file = tempfile::tempfile()?;
-        let mut writer = Writer::new(file, Some(options))?;
+        let mut writer = WriterBuilder::new()
+            .compression_type(self.options.chunk_compression)
+            .build(file);
 
         self.entries.sort_unstable_by(|a, b| a.key().cmp(&b.key()));
 
@@ -167,7 +166,7 @@ mod tests {
         sorter.add(b"allo", "lol").unwrap();
         sorter.add(b"abstract", "lol").unwrap();
 
-        let mut bytes = Writer::memory(None);
+        let mut bytes = WriterBuilder::new().memory();
         sorter.write(&mut bytes).unwrap();
         let bytes = bytes.into_inner().unwrap();
 

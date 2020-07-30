@@ -212,7 +212,7 @@ impl<A: AsRef<[u8]>> Iterator for MultiIter<A> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Writer, Reader, ReaderOptions};
+    use crate::{WriterBuilder, Reader, ReaderOptions};
 
     #[test]
     fn easy() {
@@ -225,7 +225,7 @@ mod tests {
 
         let mut vecs = Vec::new();
         for i in 0..10 {
-            let mut writer = Writer::memory(None);
+            let mut writer = WriterBuilder::new().memory();
             for i in (0 + i)..30 * (i + 1) {
                 let key = format!("{:010}", i);
                 let value = format!("{:010}", i).repeat(i / 10_000);

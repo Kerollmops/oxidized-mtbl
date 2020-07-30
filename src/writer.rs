@@ -12,44 +12,70 @@ use crate::{DEFAULT_COMPRESSION_TYPE, DEFAULT_COMPRESSION_LEVEL};
 use crate::{DEFAULT_BLOCK_SIZE, DEFAULT_BLOCK_RESTART_INTERVAL};
 use crate::{MIN_BLOCK_SIZE, METADATA_SIZE};
 
-#[derive(Clone, Copy)]
-pub struct WriterOptions {
+#[derive(Debug, Clone, Copy)]
+pub struct WriterBuilder {
     compression_type: CompressionType,
     compression_level: u32,
     block_size: u64,
     block_restart_interval: usize,
 }
 
-impl WriterOptions {
-    pub fn new() -> Self {
-        WriterOptions::default()
-    }
-
-    pub fn set_compression_type(&mut self, compression_type: CompressionType) {
-        self.compression_type = compression_type;
-    }
-
-    pub fn set_compression_level(&mut self, level: u32) {
-        self.compression_level = level;
-    }
-
-    pub fn set_block_size(&mut self, block_size: u64) {
-        self.block_size = cmp::max(block_size, MIN_BLOCK_SIZE);
-    }
-
-    pub fn set_block_restart_interval(&mut self, interval: usize) {
-        self.block_restart_interval = interval;
-    }
-}
-
-impl Default for WriterOptions {
-    fn default() -> WriterOptions {
-        WriterOptions {
+impl WriterBuilder {
+    pub fn new() -> WriterBuilder {
+        WriterBuilder {
             compression_type: DEFAULT_COMPRESSION_TYPE,
             compression_level: DEFAULT_COMPRESSION_LEVEL,
             block_size: DEFAULT_BLOCK_SIZE,
             block_restart_interval: DEFAULT_BLOCK_RESTART_INTERVAL,
         }
+    }
+
+    pub fn compression_type(&mut self, compression: CompressionType) -> &mut Self {
+        self.compression_type = compression;
+        self
+    }
+
+    pub fn compression_level(&mut self, level: u32) -> &mut Self {
+        self.compression_level = level;
+        self
+    }
+
+    pub fn block_size(&mut self, block_size: u64) -> &mut Self {
+        self.block_size = cmp::max(block_size, MIN_BLOCK_SIZE);
+        self
+    }
+
+    pub fn block_restart_interval(&mut self, interval: usize) -> &mut Self {
+        self.block_restart_interval = interval;
+        self
+    }
+
+    pub fn build<W: io::Write>(&mut self, writer: W) -> Writer<W> {
+        // derive default eventually
+        let metadata = Metadata {
+            data_block_size: self.block_size,
+            compression_algorithm: self.compression_type,
+            ..Metadata::default()
+        };
+
+        let last_offset = 0;
+
+        Writer {
+            writer,
+            metadata,
+            compression_type: self.compression_type,
+            compression_level: self.compression_level,
+            last_offset,
+            pending_offset: last_offset,
+            last_key: Vec::with_capacity(256),
+            data: BlockBuilder::new(self.block_restart_interval),
+            index: BlockBuilder::new(self.block_restart_interval),
+            pending_index_entry: false,
+        }
+    }
+
+    pub fn memory(&mut self) -> Writer<Vec<u8>> {
+        self.build(Vec::new())
     }
 }
 
@@ -58,43 +84,17 @@ pub struct Writer<W> {
     metadata: Metadata,
     data: BlockBuilder,
     index: BlockBuilder,
-    opt: WriterOptions,
+    compression_type: CompressionType,
+    compression_level: u32,
     last_key: Vec<u8>,
     last_offset: u64,
     pending_index_entry: bool,
     pending_offset: u64,
 }
 
-impl Writer<Vec<u8>> {
-    pub fn memory(options: Option<WriterOptions>) -> Self {
-        Writer::new(Vec::new(), options).unwrap()
-    }
-}
-
 impl<W: io::Write> Writer<W> {
-    pub fn new(writer: W, options: Option<WriterOptions>) -> io::Result<Self> {
-        let opt = options.unwrap_or_default();
-
-        // derive defaut eventually
-        let metadata = Metadata {
-            data_block_size: opt.block_size,
-            compression_algorithm: opt.compression_type,
-            ..Metadata::default()
-        };
-
-        let last_offset = 0;
-
-        Ok(Writer {
-            writer,
-            metadata,
-            opt,
-            last_offset,
-            pending_offset: last_offset,
-            last_key: Vec::with_capacity(256),
-            data: BlockBuilder::new(opt.block_restart_interval),
-            index: BlockBuilder::new(opt.block_restart_interval),
-            pending_index_entry: false,
-        })
+    pub fn builder() -> WriterBuilder {
+        WriterBuilder::new()
     }
 
     pub fn add<K, V>(&mut self, key: K, val: V) -> io::Result<()>
@@ -113,7 +113,7 @@ impl<W: io::Write> Writer<W> {
         let estimated_block_size = self.data.current_size_estimate();
         let estimated_block_size = estimated_block_size + 3 * 5 + key.len() + val.len();
 
-        if estimated_block_size >= self.opt.block_size as usize {
+        if estimated_block_size >= self.metadata.data_block_size as usize {
            self.flush()?;
         }
 
@@ -174,8 +174,8 @@ impl<W: io::Write> Writer<W> {
         assert!(!self.pending_index_entry);
         self.metadata.bytes_data_blocks += write_block(
             &mut self.writer,
-            self.opt.compression_type,
-            self.opt.compression_level,
+            self.compression_type,
+            self.compression_level,
             self.metadata.file_version,
             &mut self.last_offset,
             &mut self.pending_offset,
@@ -259,7 +259,7 @@ mod tests {
 
     #[test]
     fn empty() {
-        let writer = Writer::memory(None);
+        let writer = WriterBuilder::new().memory();
         let vec = writer.into_inner().unwrap();
 
         let reader = Reader::new(&vec, ReaderOptions::default()).unwrap();
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn one_key() {
-        let mut writer = Writer::memory(None);
+        let mut writer = WriterBuilder::new().memory();
         writer.add("hello", "I'm the one").unwrap();
 
         let vec = writer.into_inner().unwrap();
