@@ -1,8 +1,8 @@
 use std::collections::binary_heap::{BinaryHeap, PeekMut};
 use std::cmp::{Reverse, Ordering};
-use std::mem;
+use std::{mem, io};
 
-use crate::{Reader, ReaderIntoIter};
+use crate::{Writer, Reader, ReaderIntoIter};
 
 pub struct Entry<A> {
     iter: ReaderIntoIter<A>,
@@ -61,24 +61,52 @@ impl<A: AsRef<[u8]>> PartialOrd for Entry<A> {
     }
 }
 
-pub struct MergerOptions<MF> {
-    pub merge: MF,
-    // pub dupsort: DF,
+#[derive(Clone)]
+pub struct MergerBuilder<A, MF> {
+    sources: Vec<Reader<A>>,
+    merge: MF,
+}
+
+impl<A, MF> MergerBuilder<A, MF> {
+    pub fn new(merge: MF) -> Self {
+        MergerBuilder { merge, sources: Vec::new() }
+    }
+
+    pub fn add(&mut self, source: Reader<A>) -> &mut Self {
+        self.push(source);
+        self
+    }
+
+    pub fn push(&mut self, source: Reader<A>) {
+        self.sources.push(source);
+    }
+
+    pub fn build(self) -> Merger<A, MF> {
+        Merger { sources: self.sources, merge: self.merge }
+    }
+}
+
+impl<A, MF> Extend<Reader<A>> for MergerBuilder<A, MF> {
+    fn extend<T: IntoIterator<Item=Reader<A>>>(&mut self, iter: T) {
+        self.sources.extend(iter);
+    }
 }
 
 pub struct Merger<A, MF> {
     sources: Vec<Reader<A>>,
-    opt: MergerOptions<MF>,
+    merge: MF,
+}
+
+impl<A, MF> Merger<A, MF> {
+    pub fn builder(merge: MF) -> MergerBuilder<A, MF> {
+        MergerBuilder::new(merge)
+    }
 }
 
 impl<A: AsRef<[u8]>, MF> Merger<A, MF> {
-    pub fn new(sources: Vec<Reader<A>>, opt: MergerOptions<MF>) -> Self {
-        Merger { sources, opt }
-    }
-
-    pub fn into_merge_iter(mut self) -> MergerIter<A, MF> {
+    pub fn into_merge_iter(self) -> MergerIter<A, MF> {
         let mut heap = BinaryHeap::new();
-        for source in self.sources.drain(..) {
+        for source in self.sources {
             if let Ok(iter) = source.into_iter() {
                 if let Some(entry) = Entry::new(iter) {
                     heap.push(Reverse(entry));
@@ -87,7 +115,7 @@ impl<A: AsRef<[u8]>, MF> Merger<A, MF> {
         }
 
         MergerIter {
-            merger: self,
+            merge: self.merge,
             heap,
             cur_key: Vec::new(),
             cur_vals: Vec::new(),
@@ -115,8 +143,21 @@ impl<A: AsRef<[u8]>, MF> Merger<A, MF> {
     }
 }
 
+impl<A, MF> Merger<A, MF>
+where A: AsRef<[u8]>,
+      MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>,
+{
+    pub fn write_into<W: io::Write>(self, writer: &mut Writer<W>) -> io::Result<()> {
+        let mut iter = self.into_merge_iter();
+        while let Some((key, val)) = iter.next() {
+            writer.insert(key, val)?;
+        }
+        Ok(())
+    }
+}
+
 pub struct MergerIter<A, MF> {
-    merger: Merger<A, MF>,
+    merge: MF,
     heap: BinaryHeap<Reverse<Entry<A>>>,
     cur_key: Vec<u8>,
     cur_vals: Vec<Vec<u8>>,
@@ -155,7 +196,7 @@ where A: AsRef<[u8]>,
         }
 
         if self.pending {
-            self.merged_val = (self.merger.opt.merge)(&self.cur_key, &self.cur_vals).expect("merge abort");
+            self.merged_val = (self.merge)(&self.cur_key, &self.cur_vals).expect("merge abort");
             self.pending = false;
             Some((&self.cur_key, &self.merged_val))
         } else {
@@ -235,12 +276,13 @@ mod tests {
             vecs.push(vec);
         }
 
-        let sources = vecs.into_iter()
+        let sources: Vec<_> = vecs.into_iter()
             .map(|v| Reader::new(v).unwrap())
             .collect();
 
-        let opt = MergerOptions { merge };
-        let merger = Merger::new(sources, opt);
+        let mut builder = Merger::builder(merge);
+        builder.extend(sources);
+        let merger = builder.build();
 
         let mut iter = merger.into_merge_iter();
         let mut prev_key = vec![];

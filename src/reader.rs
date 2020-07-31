@@ -81,6 +81,7 @@ impl ReaderBuilder {
     }
 }
 
+#[derive(Clone)]
 pub struct Reader<A> {
     metadata: Metadata,
     data: BytesView<A>,

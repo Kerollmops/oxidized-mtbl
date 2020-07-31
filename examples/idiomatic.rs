@@ -41,27 +41,31 @@ fn main() -> io::Result<()> {
     let mut file = wtr.into_inner()?;
     file.seek(SeekFrom::Start(0))?;
     let mmap = unsafe { Mmap::map(&file)? };
-    let _first_rdr = Reader::new(mmap).unwrap();
+    let first_rdr = Reader::new(mmap).unwrap();
 
     // Here we use an helper method to directly read the batch
     // of entries we wrote into a Vec.
-    let _second_rdr = srt.into_iter()?;
+    let file = File::create("target/second.mtbl")?;
+    let mmap = unsafe { Mmap::map(&file)? };
+    let mut second_wtr =  Writer::new(file);
 
-    // let mgr = MergerBuilder::new(concat_merge)
-    //     .add(first_rdr)
-    //     .add(second_rdr)
-    //     .build();
+    srt.write_into(&mut second_wtr)?;
+    let second_rdr = Reader::new(mmap).unwrap();
 
-    // // You can either iterate over the merged entries.
-    // // let mut iter = mgr.into_iter();
-    // // while let Some((_key, _val)) = iter.next() {
-    // //     // ...
-    // // }
+    let mut builder = MergerBuilder::new(concat_merge);
+    builder.add(first_rdr).add(second_rdr);
+    let mgr = builder.build();
 
-    // // Or you can write them into a new Writer.
-    // let file = File::create("merged.mtbl")?;
-    // let mut writer = Writer::new(file)?;
-    // mgr.write_into(&mut writer)?;
+    // You can either iterate over the merged entries.
+    // let mut iter = mgr.into_iter();
+    // while let Some((_key, _val)) = iter.next() {
+    //     // ...
+    // }
+
+    // Or you can write them into a new Writer.
+    let file = File::create("target/merged.mtbl")?;
+    let mut writer = Writer::new(file);
+    mgr.write_into(&mut writer)?;
 
     Ok(())
 }

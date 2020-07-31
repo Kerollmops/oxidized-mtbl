@@ -8,7 +8,7 @@ use crate::FileVersion;
 use crate::{METADATA_SIZE, DEFAULT_BLOCK_SIZE, DEFAULT_COMPRESSION_TYPE};
 use crate::{MAGIC, MAGIC_V1};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(C)]
 pub struct Metadata {
     pub file_version: FileVersion,

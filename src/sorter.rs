@@ -5,7 +5,7 @@ use std::{cmp, io};
 use memmap::Mmap;
 
 use crate::{Writer, WriterBuilder, CompressionType};
-use crate::{Merger, MergerOptions, MergerIter};
+use crate::{Merger, MergerIter};
 use crate::Reader;
 use crate::INITIAL_SORTER_VEC_SIZE;
 use crate::{DEFAULT_COMPRESSION_LEVEL, DEFAULT_SORTER_MEMORY, MIN_SORTER_MEMORY};
@@ -166,7 +166,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         Ok(())
     }
 
-    pub fn write<W: io::Write>(self, writer: &mut Writer<W>) -> io::Result<()> {
+    pub fn write_into<W: io::Write>(self, writer: &mut Writer<W>) -> io::Result<()> {
         let mut iter = self.into_iter()?;
         while let Some((key, val)) = iter.next() {
             writer.insert(key, val)?;
@@ -182,9 +182,11 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
             let mmap = Mmap::map(&f)?;
             Ok(Reader::new(mmap).unwrap())
         }).collect();
-        let opt = MergerOptions { merge: self.merge };
 
-        Ok(Merger::new(sources?, opt).into_merge_iter())
+        let mut builder = Merger::builder(self.merge);
+        builder.extend(sources?);
+
+        Ok(builder.build().into_merge_iter())
     }
 }
 
@@ -208,7 +210,7 @@ mod tests {
         sorter.insert(b"abstract", "lol").unwrap();
 
         let mut bytes = WriterBuilder::new().memory();
-        sorter.write(&mut bytes).unwrap();
+        sorter.write_into(&mut bytes).unwrap();
         let bytes = bytes.into_inner().unwrap();
 
         let rdr = Reader::new(bytes.as_slice()).unwrap();

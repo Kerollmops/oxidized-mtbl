@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::io;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u64)]
 pub enum CompressionType {
     None = 0,
@@ -10,6 +10,20 @@ pub enum CompressionType {
     Lz4 = 3,
     Lz4hc = 4,
     Zstd = 5,
+}
+
+impl CompressionType {
+    pub(crate) fn from_u64(value: u64) -> Option<CompressionType> {
+        match value {
+            0 => Some(CompressionType::None),
+            1 => Some(CompressionType::Snappy),
+            2 => Some(CompressionType::Zlib),
+            3 => Some(CompressionType::Lz4),
+            4 => Some(CompressionType::Lz4hc),
+            5 => Some(CompressionType::Zstd),
+            _ => None,
+        }
+    }
 }
 
 pub fn decompress(type_: CompressionType, data: &[u8]) -> io::Result<Cow<[u8]>> {

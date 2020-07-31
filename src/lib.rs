@@ -24,7 +24,7 @@ pub use compression::CompressionType;
 pub use self::metadata::Metadata;
 pub use self::reader::{Reader, ReaderBuilder, ReaderIntoGet, ReaderIntoIter};
 pub use self::writer::{Writer, WriterBuilder};
-pub use self::merger::{Merger, MergerOptions, MergerIter};
+pub use self::merger::{Merger, MergerBuilder, MergerIter};
 pub use self::sorter::{Sorter, SorterBuilder};
 
 mod block;
@@ -38,25 +38,11 @@ mod sorter;
 mod varint;
 mod writer;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Hash)]
 #[repr(u32)]
 pub enum FileVersion {
     FormatV1 = 0,
     FormatV2 = 1,
-}
-
-impl CompressionType {
-    fn from_u64(value: u64) -> Option<CompressionType> {
-        match value {
-            0 => Some(CompressionType::None),
-            1 => Some(CompressionType::Snappy),
-            2 => Some(CompressionType::Zlib),
-            3 => Some(CompressionType::Lz4),
-            4 => Some(CompressionType::Lz4hc),
-            5 => Some(CompressionType::Zstd),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -81,11 +67,6 @@ impl<A: AsRef<[u8]>> AsRef<[u8]> for InnerBytesView<A> {
 }
 
 impl<A> BytesView<A> {
-    fn new(data: A, offset: usize, length: usize) -> Self {
-        let inner = InnerBytesView::Data(Arc::new(data));
-        BytesView { inner, offset, length }
-    }
-
     fn from_bytes(bytes: Vec<u8>) -> Self {
         let length = bytes.len();
         let inner = InnerBytesView::Bytes(Arc::from(bytes));
