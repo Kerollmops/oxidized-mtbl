@@ -8,6 +8,8 @@ const MIN_BLOCK_SIZE: u64 = 1024;
 const DEFAULT_COMPRESSION_LEVEL: u32 = 0;
 const DEFAULT_COMPRESSION_TYPE: CompressionType = CompressionType::None;
 
+const DEFAULT_NB_CHUNKS: usize = 25;
+const MIN_NB_CHUNKS: usize = 1;
 const DEFAULT_SORTER_MEMORY: usize = 1_073_741_824; // 1GB
 const MIN_SORTER_MEMORY: usize = 10_485_760; // 10MB
 const INITIAL_SORTER_VEC_SIZE: usize = 131_072; // 128KB

@@ -9,10 +9,12 @@ use crate::{Merger, MergerIter};
 use crate::Reader;
 use crate::INITIAL_SORTER_VEC_SIZE;
 use crate::{DEFAULT_COMPRESSION_LEVEL, DEFAULT_SORTER_MEMORY, MIN_SORTER_MEMORY};
+use crate::{DEFAULT_NB_CHUNKS, MIN_NB_CHUNKS};
 
 #[derive(Debug, Clone, Copy)]
 pub struct SorterBuilder<MF> {
     pub max_memory: usize,
+    pub max_nb_chunks: usize,
     pub chunk_compression_type: CompressionType,
     pub chunk_compression_level: u32,
     pub merge: MF,
@@ -22,6 +24,7 @@ impl<MF> SorterBuilder<MF> {
     pub fn new(merge: MF) -> Self {
         SorterBuilder {
             max_memory: DEFAULT_SORTER_MEMORY,
+            max_nb_chunks: DEFAULT_NB_CHUNKS,
             chunk_compression_type: CompressionType::Snappy,
             chunk_compression_level: DEFAULT_COMPRESSION_LEVEL,
             merge,
@@ -30,6 +33,13 @@ impl<MF> SorterBuilder<MF> {
 
     pub fn max_memory(&mut self, memory: usize) -> &mut Self {
         self.max_memory = cmp::max(memory, MIN_SORTER_MEMORY);
+        self
+    }
+
+    /// The maximum number of chunks on disk, if this number of chunks is reached
+    /// they will be merged into a single chunk. Merging can reduce the disk usage.
+    pub fn max_nb_chunks(&mut self, nb_chunks: usize) -> &mut Self {
+        self.max_nb_chunks = cmp::max(nb_chunks, MIN_NB_CHUNKS);
         self
     }
 
@@ -49,6 +59,7 @@ impl<MF> SorterBuilder<MF> {
             entries: Vec::with_capacity(INITIAL_SORTER_VEC_SIZE),
             entry_bytes: 0,
             max_memory: self.max_memory,
+            max_nb_chunks: self.max_nb_chunks,
             chunk_compression_type: self.chunk_compression_type,
             chunk_compression_level: self.chunk_compression_level,
             merge: self.merge,
@@ -85,6 +96,7 @@ pub struct Sorter<MF> {
     /// The number of bytes allocated by the entries.
     entry_bytes: usize,
     max_memory: usize,
+    max_nb_chunks: usize,
     chunk_compression_type: CompressionType,
     chunk_compression_level: u32,
     merge: MF,
@@ -117,6 +129,9 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         let entries_vec_size = self.entries.capacity() * size_of::<Entry>();
         if self.entry_bytes + entries_vec_size >= self.max_memory {
             self.write_chunk()?;
+            if self.chunks.len() > self.max_nb_chunks {
+                self.merge_chunks()?;
+            }
         }
 
         Ok(())
@@ -162,6 +177,35 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         let file = writer.into_inner()?;
         self.chunks.push(file);
         self.entry_bytes = 0;
+
+        Ok(())
+    }
+
+    fn merge_chunks(&mut self) -> io::Result<()> {
+        let file = tempfile::tempfile()?;
+        let mut writer = WriterBuilder::new()
+            .compression_type(self.chunk_compression_type)
+            .compression_level(self.chunk_compression_level)
+            .build(file);
+
+        // Drain the chunks to mmap them and store them into a vector.
+        let sources: io::Result<Vec<_>> = self.chunks.drain(..).map(|f| unsafe {
+            let mmap = Mmap::map(&f)?;
+            Ok(Reader::new(mmap).unwrap())
+        }).collect();
+
+        // Create a merger to merge all those chunks.
+        let mut builder = Merger::builder(&self.merge);
+        builder.extend(sources?);
+        let merger = builder.build();
+
+        let mut iter = merger.into_merge_iter();
+        while let Some((key, val)) = iter.next() {
+            writer.insert(key, val)?;
+        }
+
+        let file = writer.into_inner()?;
+        self.chunks.push(file);
 
         Ok(())
     }
