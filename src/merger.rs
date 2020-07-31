@@ -212,7 +212,7 @@ impl<A: AsRef<[u8]>> Iterator for MultiIter<A> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{WriterBuilder, Reader, ReaderOptions};
+    use crate::{WriterBuilder, Reader};
 
     #[test]
     fn easy() {
@@ -236,7 +236,7 @@ mod tests {
         }
 
         let sources = vecs.into_iter()
-            .map(|v| Reader::new(v, ReaderOptions::default()).unwrap())
+            .map(|v| Reader::new(v).unwrap())
             .collect();
 
         let opt = MergerOptions { merge };

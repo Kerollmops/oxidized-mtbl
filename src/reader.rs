@@ -11,28 +11,24 @@ use crate::METADATA_SIZE;
 use crate::varint::varint_decode64;
 use crate::{BytesView, FileVersion, Metadata};
 
-enum ReaderIterType {
-    Iter,
-    Get,
-    GetPrefix,
-    GetRange,
+#[derive(Debug, Clone, Copy)]
+pub struct ReaderBuilder {
+    verify_checksums: bool,
 }
 
-#[derive(Default, Copy, Clone)]
-pub struct ReaderOptions {
-    pub verify_checksums: bool,
-    pub madvise_random: bool,
-}
+impl ReaderBuilder {
+    pub fn new() -> ReaderBuilder {
+        ReaderBuilder {
+            verify_checksums: true,
+        }
+    }
 
-pub struct Reader<A> {
-    metadata: Metadata,
-    data: BytesView<A>,
-    _opt: ReaderOptions,
-    index: Arc<Block<A>>,
-}
+    pub fn verify_checksums(&mut self, verify: bool) -> &mut Self {
+        self.verify_checksums = verify;
+        self
+    }
 
-impl<A: AsRef<[u8]>> Reader<A> {
-    pub fn new(data: A, _opt: ReaderOptions) -> Result<Reader<A>, Error> {
+    pub fn read<A: AsRef<[u8]>>(&mut self, data: A) -> Result<Reader<A>, Error> {
         if data.as_ref().len() < METADATA_SIZE {
             return Err(Error::InvalidMetadataSize)
         }
@@ -72,15 +68,35 @@ impl<A: AsRef<[u8]>> Reader<A> {
         let index_data = data.slice(start, index_len);
 
         #[cfg(feature = "checksum")] {
-        if _opt.verify_checksums {
+        if self.verify_checksums {
             let index_crc = LittleEndian::read_u32(&data.as_ref()[metadata.index_block_offset as usize + index_len_len..]);
             assert_eq!(index_crc, crc32c::crc32c(index_data.as_ref()));
         } }
 
         let index = Block::init(index_data).unwrap();
         let index = Arc::new(index);
+        let verify_checksums = self.verify_checksums;
 
-        Ok(Reader { metadata, data, _opt, index })
+        Ok(Reader { metadata, data, verify_checksums, index })
+    }
+}
+
+pub struct Reader<A> {
+    metadata: Metadata,
+    data: BytesView<A>,
+    verify_checksums: bool,
+    index: Arc<Block<A>>,
+}
+
+impl<A> Reader<A> {
+    pub fn builder() -> ReaderBuilder {
+        ReaderBuilder::new()
+    }
+}
+
+impl<A: AsRef<[u8]>> Reader<A> {
+    pub fn new(data: A) -> Result<Reader<A>, Error> {
+        ReaderBuilder::new().read(data)
     }
 
     pub fn metadata(&self) -> &Metadata {
@@ -129,7 +145,7 @@ impl<A: AsRef<[u8]>> Reader<A> {
         let raw_contents = &self.data.as_ref()[raw_start..raw_start + raw_contents_size];
 
         #[cfg(feature = "checksum")] {
-        if self._opt.verify_checksums {
+        if self.verify_checksums {
             let block_crc = LittleEndian::read_u32(&self.data.as_ref()[offset + raw_contents_size_len..]);
             let calc_crc = crc32c::crc32c(raw_contents);
             assert_eq!(block_crc, calc_crc);
@@ -177,6 +193,13 @@ impl<A: AsRef<[u8]>> AsRef<[u8]> for ReaderIntoGet<A> {
     fn as_ref(&self) -> &[u8] {
         &(*self.block).as_ref()[self.val_offset..self.val_offset + self.val_len]
     }
+}
+
+enum ReaderIterType {
+    Iter,
+    Get,
+    GetPrefix,
+    GetRange,
 }
 
 pub struct ReaderIntoIter<A> {

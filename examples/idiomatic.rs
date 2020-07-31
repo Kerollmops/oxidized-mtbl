@@ -1,7 +1,8 @@
-use std::io;
+use std::io::{self, Seek, SeekFrom};
 use std::fs::File;
 
 use oxidized_mtbl::*;
+use memmap::Mmap;
 
 // Here we concatenate all the values that we must merge.
 fn concat_merge(_key: &[u8], vals: &[Vec<u8>]) -> Option<Vec<u8>> {
@@ -35,15 +36,16 @@ fn main() -> io::Result<()> {
     srt.insert("cde", "bonjour3")?;
     srt.insert("abc", "bonjour1")?;
 
-    // // We flush the writer to disk and retrieve the underlying file.
-    // // We seek at the begining of the file and create a reader from it.
-    // let file = wtr.into_inner()?;
-    // file.seek(SeekFrom::Start(0))?;
-    // let first_rdr = Reader::new(file)?;
+    // We flush the writer to disk and retrieve the underlying file.
+    // We seek at the begining of the file and create a reader from it.
+    let mut file = wtr.into_inner()?;
+    file.seek(SeekFrom::Start(0))?;
+    let mmap = unsafe { Mmap::map(&file)? };
+    let _first_rdr = Reader::new(mmap).unwrap();
 
-    // // Here we use an helper method to directly read the batch
-    // // of entries we wrote into a Vec.
-    // let second_rdr = srt.into_reader()?;
+    // Here we use an helper method to directly read the batch
+    // of entries we wrote into a Vec.
+    let _second_rdr = srt.into_iter()?;
 
     // let mgr = MergerBuilder::new(concat_merge)
     //     .add(first_rdr)

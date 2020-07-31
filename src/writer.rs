@@ -265,14 +265,14 @@ fn bytes_shortest_separator(start: &mut Vec<u8>, limit: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Reader, ReaderOptions};
+    use crate::Reader;
 
     #[test]
     fn empty() {
         let writer = WriterBuilder::new().memory();
         let vec = writer.into_inner().unwrap();
 
-        let reader = Reader::new(&vec, ReaderOptions::default()).unwrap();
+        let reader = Reader::new(&vec).unwrap();
         assert!(reader.into_iter().is_err());
     }
 
@@ -282,7 +282,7 @@ mod tests {
         writer.insert("hello", "I'm the one").unwrap();
 
         let vec = writer.into_inner().unwrap();
-        let reader = Reader::new(&vec, ReaderOptions::default()).unwrap();
+        let reader = Reader::new(&vec).unwrap();
 
         let mut count = 0;
         let mut iter = reader.into_iter().unwrap();

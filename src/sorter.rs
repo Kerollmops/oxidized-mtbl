@@ -6,7 +6,7 @@ use memmap::Mmap;
 
 use crate::{Writer, WriterBuilder, CompressionType};
 use crate::{Merger, MergerOptions, MergerIter};
-use crate::{Reader, ReaderOptions};
+use crate::Reader;
 use crate::INITIAL_SORTER_VEC_SIZE;
 use crate::{DEFAULT_COMPRESSION_LEVEL, DEFAULT_SORTER_MEMORY, MIN_SORTER_MEMORY};
 
@@ -180,7 +180,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
 
         let sources: io::Result<Vec<_>> = self.chunks.into_iter().map(|f| unsafe {
             let mmap = Mmap::map(&f)?;
-            Ok(Reader::new(mmap, ReaderOptions::default()).unwrap())
+            Ok(Reader::new(mmap).unwrap())
         }).collect();
         let opt = MergerOptions { merge: self.merge };
 
@@ -211,8 +211,7 @@ mod tests {
         sorter.write(&mut bytes).unwrap();
         let bytes = bytes.into_inner().unwrap();
 
-        let opt = ReaderOptions::default();
-        let rdr = Reader::new(bytes.as_slice(), opt).unwrap();
+        let rdr = Reader::new(bytes.as_slice()).unwrap();
         let mut iter = rdr.into_iter().unwrap();
         while let Some((key, val)) = iter.next() {
             match key {

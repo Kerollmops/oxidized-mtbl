@@ -13,7 +13,7 @@ pub struct Block<A> {
 }
 
 impl<A: AsRef<[u8]>> Block<A> {
-    pub fn init(mut data: BytesView<A>) -> Option<Block<A>> {
+    pub fn init(data: BytesView<A>) -> Option<Block<A>> {
         let mut restart_offset = 0;
 
         if data.len() < mem::size_of::<u32>() {
