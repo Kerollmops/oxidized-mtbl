@@ -1,5 +1,5 @@
-use std::io::{self, Seek, SeekFrom};
-use std::fs::File;
+use std::fs::OpenOptions;
+use std::io;
 
 use oxidized_mtbl::*;
 use memmap::Mmap;
@@ -10,19 +10,22 @@ fn concat_merge(_key: &[u8], vals: &[Vec<u8>]) -> Option<Vec<u8>> {
 }
 
 fn main() -> io::Result<()> {
-    let file = File::create("target/first.mtbl")?;
+    let mut file_options = OpenOptions::new();
+    file_options.read(true).write(true).truncate(true).create(true);
+
+    let file = file_options.open("target/first.mtbl")?;
 
     // We create a new writer to dump a first batch of entries to disk.
-    let mut wtr = WriterBuilder::new()
+    let mut first_wtr = WriterBuilder::new()
         .compression_type(CompressionType::Snappy)
         .compression_level(5)
         .block_size(1024)
         .build(file);
 
-    wtr.insert("abc", "hello1")?;
-    wtr.insert("bcd", "hello2")?;
-    wtr.insert("cde", "hello3")?;
-    wtr.insert("def", "hello4")?;
+    first_wtr.insert("abc", "hello1")?;
+    first_wtr.insert("bcd", "hello2")?;
+    first_wtr.insert("cde", "hello3")?;
+    first_wtr.insert("def", "hello4")?;
 
     // When you can't or don't want to insert the entries in lexical order,
     // you can use the Sorter type, it will automatically sort them for you.
@@ -38,18 +41,18 @@ fn main() -> io::Result<()> {
 
     // We flush the writer to disk and retrieve the underlying file.
     // We seek at the begining of the file and create a reader from it.
-    let mut file = wtr.into_inner()?;
-    file.seek(SeekFrom::Start(0))?;
+    let file = first_wtr.into_inner()?;
     let mmap = unsafe { Mmap::map(&file)? };
     let first_rdr = Reader::new(mmap).unwrap();
 
     // Here we use an helper method to directly read the batch
     // of entries we wrote into a Vec.
-    let file = File::create("target/second.mtbl")?;
-    let mmap = unsafe { Mmap::map(&file)? };
-    let mut second_wtr =  Writer::new(file);
-
+    let file = file_options.open("target/second.mtbl")?;
+    let mut second_wtr = Writer::new(file);
     srt.write_into(&mut second_wtr)?;
+
+    let file = second_wtr.into_inner()?;
+    let mmap = unsafe { Mmap::map(&file)? };
     let second_rdr = Reader::new(mmap).unwrap();
 
     let mut builder = MergerBuilder::new(concat_merge);
@@ -63,9 +66,10 @@ fn main() -> io::Result<()> {
     // }
 
     // Or you can write them into a new Writer.
-    let file = File::create("target/merged.mtbl")?;
+    let file = file_options.open("target/merged.mtbl")?;
     let mut writer = Writer::new(file);
     mgr.write_into(&mut writer)?;
+    writer.finish()?;
 
     Ok(())
 }
