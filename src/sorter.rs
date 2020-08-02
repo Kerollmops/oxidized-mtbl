@@ -112,10 +112,10 @@ impl<MF> Sorter<MF> {
     }
 }
 
-impl<MF> Sorter<MF>
-where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
+impl<MF, U> Sorter<MF>
+where MF: Fn(&[u8], &[Vec<u8>]) -> Result<Vec<u8>, U>
 {
-    pub fn insert<K, V>(&mut self, key: K, val: V) -> Result<(), Error>
+    pub fn insert<K, V>(&mut self, key: K, val: V) -> Result<(), Error<U>>
     where K: AsRef<[u8]>,
           V: AsRef<[u8]>,
     {
@@ -137,7 +137,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         Ok(())
     }
 
-    fn write_chunk(&mut self) -> Result<(), Error> {
+    fn write_chunk(&mut self) -> Result<(), Error<U>> {
         let file = tempfile::tempfile()?;
         let mut writer = WriterBuilder::new()
             .compression_type(self.chunk_compression_type)
@@ -158,7 +158,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
                     if key == &entry.key() {
                         vals.push(entry.val().to_vec());
                     } else {
-                        let merged_val = (self.merge)(&key, &vals).unwrap();
+                        let merged_val = (self.merge)(&key, &vals).map_err(Error::Merge)?;
                         writer.insert(&key, &merged_val)?;
                         key.clear();
                         vals.clear();
@@ -170,7 +170,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         }
 
         if let Some((key, vals)) = current.take() {
-            let merged_val = (self.merge)(&key, &vals).unwrap();
+            let merged_val = (self.merge)(&key, &vals).map_err(Error::Merge)?;
             writer.insert(&key, &merged_val)?;
         }
 
@@ -181,7 +181,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         Ok(())
     }
 
-    fn merge_chunks(&mut self) -> Result<(), Error> {
+    fn merge_chunks(&mut self) -> Result<(), Error<U>> {
         let file = tempfile::tempfile()?;
         let mut writer = WriterBuilder::new()
             .compression_type(self.chunk_compression_type)
@@ -189,9 +189,9 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
             .build(file);
 
         // Drain the chunks to mmap them and store them into a vector.
-        let sources: Result<Vec<_>, Error> = self.chunks.drain(..).map(|f| unsafe {
+        let sources: Result<Vec<_>, Error<U>> = self.chunks.drain(..).map(|f| unsafe {
             let mmap = Mmap::map(&f)?;
-            Reader::new(mmap)
+            Reader::new(mmap).map_err(Error::convert_merge_error)
         }).collect();
 
         // Create a merger to merge all those chunks.
@@ -200,7 +200,8 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         let merger = builder.build();
 
         let mut iter = merger.into_merge_iter();
-        while let Some((key, val)) = iter.next() {
+        while let Some(result) = iter.next() {
+            let (key, val) = result.map_err(Error::Merge)?;
             writer.insert(key, val)?;
         }
 
@@ -210,21 +211,22 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         Ok(())
     }
 
-    pub fn write_into<W: io::Write>(self, writer: &mut Writer<W>) -> Result<(), Error> {
+    pub fn write_into<W: io::Write>(self, writer: &mut Writer<W>) -> Result<(), Error<U>> {
         let mut iter = self.into_iter()?;
-        while let Some((key, val)) = iter.next() {
+        while let Some(result) = iter.next() {
+            let (key, val) = result.map_err(Error::Merge)?;
             writer.insert(key, val)?;
         }
         Ok(())
     }
 
-    pub fn into_iter(mut self) -> Result<MergerIter<Mmap, MF>, Error> {
+    pub fn into_iter(mut self) -> Result<MergerIter<Mmap, MF>, Error<U>> {
         // Flush the pending unordered entries.
         self.write_chunk()?;
 
-        let sources: Result<Vec<_>, Error> = self.chunks.into_iter().map(|f| unsafe {
+        let sources: Result<Vec<_>, Error<U>> = self.chunks.into_iter().map(|f| unsafe {
             let mmap = Mmap::map(&f)?;
-            Reader::new(mmap)
+            Reader::new(mmap).map_err(Error::convert_merge_error)
         }).collect();
 
         let mut builder = Merger::builder(self.merge);
@@ -240,8 +242,8 @@ mod tests {
 
     #[test]
     fn simple() {
-        fn merge(_key: &[u8], vals: &[Vec<u8>]) -> Option<Vec<u8>> {
-            Some(vals.iter().flatten().cloned().collect())
+        fn merge(_key: &[u8], vals: &[Vec<u8>]) -> Result<Vec<u8>, ()> {
+            Ok(vals.iter().flatten().cloned().collect())
         }
 
         let mut sorter = SorterBuilder::new(merge)

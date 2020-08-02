@@ -1,9 +1,20 @@
 use std::{fmt, io, error};
 
 #[derive(Debug)]
-pub enum Error {
+pub enum Error<U=()> {
     Mtbl(MtblError),
     Io(io::Error),
+    Merge(U),
+}
+
+impl<U> Error<U> {
+    pub(crate) fn convert_merge_error<V>(self) -> Error<V> {
+        match self {
+            Error::Mtbl(mtbl) => Error::Mtbl(mtbl),
+            Error::Io(io) => Error::Io(io),
+            Error::Merge(_) => panic!("cannot convert a merge error"),
+        }
+    }
 }
 
 impl fmt::Display for Error {
@@ -11,20 +22,21 @@ impl fmt::Display for Error {
         match self {
             Error::Mtbl(mtbl) => write!(f, "{}", mtbl),
             Error::Io(io) => write!(f, "{}", io),
+            Error::Merge(_) => f.write_str("<user merge error>"),
         }
     }
 }
 
 impl error::Error for Error { }
 
-impl From<io::Error> for Error {
-    fn from(err: io::Error) -> Error {
+impl<U> From<io::Error> for Error<U> {
+    fn from(err: io::Error) -> Error<U> {
         Error::Io(err)
     }
 }
 
-impl From<MtblError> for Error {
-    fn from(err: MtblError) -> Error {
+impl<U> From<MtblError> for Error<U> {
+    fn from(err: MtblError) -> Error<U> {
         Error::Mtbl(err)
     }
 }

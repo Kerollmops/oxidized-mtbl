@@ -4,8 +4,8 @@ use oxidized_mtbl::*;
 use memmap::Mmap;
 
 // Here we concatenate all the values that we must merge.
-fn concat_merge(_key: &[u8], vals: &[Vec<u8>]) -> Option<Vec<u8>> {
-    Some(vals.iter().cloned().flatten().collect())
+fn concat_merge(_key: &[u8], vals: &[Vec<u8>]) -> Result<Vec<u8>, ()> {
+    Ok(vals.iter().cloned().flatten().collect())
 }
 
 fn main() -> Result<(), Error> {
@@ -64,7 +64,7 @@ fn main() -> Result<(), Error> {
     //     // ...
     // }
 
-    // Or you can write them into a new Writer.
+    // Or you can write them into a new Writer (don't forget to flush).
     let file = file_options.open("target/merged.mtbl")?;
     let mut writer = Writer::new(file);
     mgr.write_into(&mut writer)?;
