@@ -107,7 +107,12 @@ impl<A: AsRef<[u8]>> Reader<A> {
     pub fn get(self, key: &[u8]) -> Result<Option<ReaderIntoGet<A>>, Error> {
         let mut iter = ReaderIntoIter::new_get(self, key)?;
         match iter.next() {
-            Some(_) => Ok(ReaderIntoGet::new(iter.bi)),
+            Some(_) => {
+                match iter.bi {
+                    Some(bi) => Ok(ReaderIntoGet::new(bi)),
+                    None => Ok(None),
+                }
+            },
             None => Ok(None),
         }
     }
@@ -165,14 +170,14 @@ impl<A: AsRef<[u8]>> Reader<A> {
         Ok(block)
     }
 
-    fn block_at_index(&self, index_iter: &BlockIter<A>) -> Result<Block<A>, Error> {
+    fn block_at_index(&self, index_iter: &BlockIter<A>) -> Result<Option<Block<A>>, Error> {
         match index_iter.get() {
             Some((_key, val)) => {
                 let mut offset = 0;
                 varint_decode64(val, &mut offset);
-                self.block(offset as usize)
+                self.block(offset as usize).map(Some)
             },
-            None => Err(Error::from(MtblError::InvalidBlock)),
+            None => Ok(None),
         }
     }
 }
@@ -210,7 +215,7 @@ enum ReaderIterType {
 pub struct ReaderIntoIter<A> {
     r: Reader<A>,
     block_offset: u64,
-    bi: BlockIter<A>,
+    bi: Option<BlockIter<A>>,
     index_iter: BlockIter<A>,
     k: Vec<u8>,
     first: bool,
@@ -223,9 +228,14 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
         let mut index_iter = BlockIter::init(r.index.clone());
         index_iter.seek_to_first();
 
-        let b = r.block_at_index(&index_iter)?;
-        let mut bi = BlockIter::init(Arc::new(b));
-        bi.seek_to_first();
+        let bi = match r.block_at_index(&index_iter)? {
+            Some(b) => {
+                let mut bi = BlockIter::init(Arc::new(b));
+                bi.seek_to_first();
+                Some(bi)
+            },
+            None => None,
+        };
 
         Ok(ReaderIntoIter {
             r,
@@ -243,10 +253,14 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
         let mut index_iter = BlockIter::init(r.index.clone());
         index_iter.seek(key);
 
-        let b = r.block_at_index(&index_iter)?;
-        let mut bi = BlockIter::init(Arc::new(b));
-
-        bi.seek(key);
+        let bi = match r.block_at_index(&index_iter)? {
+            Some(b) => {
+                let mut bi = BlockIter::init(Arc::new(b));
+                bi.seek(key);
+                Some(bi)
+            },
+            None => None,
+        };
 
         Ok(ReaderIntoIter {
             r,
@@ -303,10 +317,12 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
         if self.block_offset != new_offset {
             self.block_offset = new_offset;
             let b = self.r.block(new_offset as usize)?;
-            self.bi = BlockIter::init(Arc::new(b));
+            self.bi = Some(BlockIter::init(Arc::new(b)));
         }
 
-        self.bi.seek(key);
+        if let Some(bi) = self.bi.as_mut() {
+            bi.seek(key);
+        }
 
         self.first = true;
         self.valid = true;
@@ -314,17 +330,19 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
         return Ok(true);
     }
 
-    pub fn next(&mut self) -> Option<(&[u8], &[u8])> {
+    pub fn next(&mut self) -> Option<Result<(&[u8], &[u8]), Error>> {
         if !self.valid {
             return None;
         }
 
+        let bi = self.bi.as_mut()?;
+
         if !self.first {
-            self.bi.next();
+            bi.next();
         }
         self.first = false;
 
-        let (key, val) = match self.bi.get() {
+        let (key, val) = match bi.get() {
             Some((key, val)) => {
                 // This is a trick to make the compiler happy...
                 // https://github.com/rust-lang/rust/issues/47680
@@ -337,13 +355,26 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
                 if !self.index_iter.next() {
                     return None;
                 }
-                let b = self.r.block_at_index(&self.index_iter).unwrap();
-                self.bi = BlockIter::init(Arc::new(b));
-                self.bi.seek_to_first();
+                match self.r.block_at_index(&self.index_iter) {
+                    Ok(Some(b)) => {
+                        self.bi = Some(BlockIter::init(Arc::new(b)));
+                        let bi = self.bi.as_mut().unwrap();
+                        bi.seek_to_first();
 
-                let entry = self.bi.get();
-                self.valid = entry.is_some();
-                entry?
+                        let entry = bi.get();
+                        self.valid = entry.is_some();
+
+                        entry?
+                    },
+                    Ok(None) => {
+                        self.valid = false;
+                        return None;
+                    },
+                    Err(e) => {
+                        self.valid = false;
+                        return Some(Err(e))
+                    },
+                }
             }
         };
 
@@ -366,6 +397,6 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
             }
         }
 
-        if self.valid { Some((key, val)) } else { None }
+        if self.valid { Some(Ok((key, val))) } else { None }
     }
 }

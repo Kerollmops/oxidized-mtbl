@@ -199,9 +199,9 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Result<Vec<u8>, U>
         builder.extend(sources?);
         let merger = builder.build();
 
-        let mut iter = merger.into_merge_iter();
+        let mut iter = merger.into_merge_iter().map_err(Error::convert_merge_error)?;
         while let Some(result) = iter.next() {
-            let (key, val) = result.map_err(Error::Merge)?;
+            let (key, val) = result?;
             writer.insert(key, val)?;
         }
 
@@ -214,7 +214,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Result<Vec<u8>, U>
     pub fn write_into<W: io::Write>(self, writer: &mut Writer<W>) -> Result<(), Error<U>> {
         let mut iter = self.into_iter()?;
         while let Some(result) = iter.next() {
-            let (key, val) = result.map_err(Error::Merge)?;
+            let (key, val) = result?;
             writer.insert(key, val)?;
         }
         Ok(())
@@ -232,7 +232,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Result<Vec<u8>, U>
         let mut builder = Merger::builder(self.merge);
         builder.extend(sources?);
 
-        Ok(builder.build().into_merge_iter())
+        builder.build().into_merge_iter().map_err(Error::convert_merge_error)
     }
 }
 
@@ -261,7 +261,8 @@ mod tests {
 
         let rdr = Reader::new(bytes.as_slice()).unwrap();
         let mut iter = rdr.into_iter().unwrap();
-        while let Some((key, val)) = iter.next() {
+        while let Some(result) = iter.next() {
+            let (key, val) = result.unwrap();
             match key {
                 b"hello" => assert_eq!(val, b"kiki"),
                 b"abstract" => assert_eq!(val, b"lollol"),

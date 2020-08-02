@@ -12,7 +12,8 @@ fn main() {
     let reader = Reader::new(mmap).unwrap();
     let mut iter = reader.into_iter().unwrap();
 
-    while let Some((key, val)) = iter.next() {
+    while let Some(result) = iter.next() {
+        let (key, val) = result.unwrap();
         let key = str::from_utf8(key).unwrap();
         let val = str::from_utf8(val).unwrap();
 

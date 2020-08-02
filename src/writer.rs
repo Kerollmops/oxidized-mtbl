@@ -273,7 +273,9 @@ mod tests {
         let vec = writer.into_inner().unwrap();
 
         let reader = Reader::new(&vec).unwrap();
-        assert!(reader.into_iter().is_err());
+        let mut iter = reader.into_iter().unwrap();
+
+        assert!(iter.next().is_none());
     }
 
     #[test]

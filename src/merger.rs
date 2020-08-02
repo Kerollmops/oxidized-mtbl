@@ -12,31 +12,32 @@ pub struct Entry<A> {
 
 impl<A: AsRef<[u8]>> Entry<A> {
     // also fills the entry
-    fn new(iter: ReaderIntoIter<A>) -> Option<Entry<A>> {
+    fn new(iter: ReaderIntoIter<A>) -> Result<Option<Entry<A>>, Error> {
         let mut entry = Entry {
             iter,
             key: Vec::with_capacity(256),
             val: Vec::with_capacity(256),
         };
 
-        if !entry.fill() {
-            return None
+        if !entry.fill()? {
+            return Ok(None)
         }
 
-        Some(entry)
+        Ok(Some(entry))
     }
 
-    fn fill(&mut self) -> bool {
+    fn fill(&mut self) -> Result<bool, Error> {
         self.key.clear();
         self.val.clear();
 
         match self.iter.next() {
-            Some((key, val)) => {
+            Some(result) => {
+                let (key, val) = result?;
                 self.key.extend_from_slice(key);
                 self.val.extend_from_slice(val);
-                true
+                Ok(true)
             },
-            None => false,
+            None => Ok(false),
         }
     }
 }
@@ -104,42 +105,42 @@ impl<A, MF> Merger<A, MF> {
 }
 
 impl<A: AsRef<[u8]>, MF> Merger<A, MF> {
-    pub fn into_merge_iter(self) -> MergerIter<A, MF> {
+    pub fn into_merge_iter(self) -> Result<MergerIter<A, MF>, Error> {
         let mut heap = BinaryHeap::new();
         for source in self.sources {
             if let Ok(iter) = source.into_iter() {
-                if let Some(entry) = Entry::new(iter) {
+                if let Some(entry) = Entry::new(iter)? {
                     heap.push(Reverse(entry));
                 }
             }
         }
 
-        MergerIter {
+        Ok(MergerIter {
             merge: self.merge,
             heap,
             cur_key: Vec::new(),
             cur_vals: Vec::new(),
             merged_val: Vec::new(),
             pending: false,
-        }
+        })
     }
 
-    pub fn into_iter(self) -> MultiIter<A> {
+    pub fn into_iter(self) -> Result<MultiIter<A>, Error> {
         let mut heap = BinaryHeap::new();
         for source in self.sources {
             if let Ok(iter) = source.into_iter() {
-                if let Some(entry) = Entry::new(iter) {
+                if let Some(entry) = Entry::new(iter)? {
                     heap.push(Reverse(entry));
                 }
             }
         }
 
-        MultiIter {
+        Ok(MultiIter {
             heap,
             cur_key: Vec::new(),
             cur_vals: Vec::new(),
             pending: false,
-        }
+        })
     }
 }
 
@@ -148,9 +149,9 @@ where A: AsRef<[u8]>,
       MF: Fn(&[u8], &[Vec<u8>]) -> Result<Vec<u8>, U>,
 {
     pub fn write_into<W: io::Write>(self, writer: &mut Writer<W>) -> Result<(), Error<U>> {
-        let mut iter = self.into_merge_iter();
+        let mut iter = self.into_merge_iter().map_err(Error::convert_merge_error)?;
         while let Some(result) = iter.next() {
-            let (key, val) = result.map_err(Error::Merge)?;
+            let (key, val) = result?;
             writer.insert(key, val)?;
         }
         Ok(())
@@ -170,7 +171,7 @@ impl<A, MF, U> MergerIter<A, MF>
 where A: AsRef<[u8]>,
       MF: Fn(&[u8], &[Vec<u8>]) -> Result<Vec<u8>, U>,
 {
-    pub fn next(&mut self) -> Option<Result<(&[u8], &[u8]), U>> {
+    pub fn next(&mut self) -> Option<Result<(&[u8], &[u8]), Error<U>>> {
         self.cur_key.clear();
         self.cur_vals.clear();
 
@@ -188,8 +189,9 @@ where A: AsRef<[u8]>,
 
             if self.cur_key == entry.0.key {
                 self.cur_vals.push(mem::take(&mut entry.0.val));
-                if !entry.0.fill() {
-                    PeekMut::pop(entry);
+                match entry.0.fill() {
+                    Ok(filled) => if !filled { PeekMut::pop(entry); },
+                    Err(e) => return Some(Err(e.convert_merge_error())),
                 }
             } else {
                 break;
@@ -199,7 +201,7 @@ where A: AsRef<[u8]>,
         if self.pending {
             self.merged_val = match (self.merge)(&self.cur_key, &self.cur_vals) {
                 Ok(val) => val,
-                Err(e) => return Some(Err(e)),
+                Err(e) => return Some(Err(Error::Merge(e))),
             };
             self.pending = false;
             Some(Ok((&self.cur_key, &self.merged_val)))
@@ -217,7 +219,7 @@ pub struct MultiIter<A> {
 }
 
 impl<A: AsRef<[u8]>> Iterator for MultiIter<A> {
-    type Item = (Vec<u8>, Vec<Vec<u8>>);
+    type Item = Result<(Vec<u8>, Vec<Vec<u8>>), Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.cur_key.clear();
@@ -237,8 +239,9 @@ impl<A: AsRef<[u8]>> Iterator for MultiIter<A> {
 
             if self.cur_key == entry.0.key {
                 self.cur_vals.push(mem::take(&mut entry.0.val));
-                if !entry.0.fill() {
-                    PeekMut::pop(entry);
+                match entry.0.fill() {
+                    Ok(filled) => if !filled { PeekMut::pop(entry); },
+                    Err(e) => return Some(Err(e)),
                 }
             } else {
                 break;
@@ -247,7 +250,7 @@ impl<A: AsRef<[u8]>> Iterator for MultiIter<A> {
 
         if self.pending {
             self.pending = false;
-            Some((mem::take(&mut self.cur_key), mem::take(&mut self.cur_vals)))
+            Some(Ok((mem::take(&mut self.cur_key), mem::take(&mut self.cur_vals))))
         } else {
             None
         }
@@ -288,7 +291,7 @@ mod tests {
         builder.extend(sources);
         let merger = builder.build();
 
-        let mut iter = merger.into_merge_iter();
+        let mut iter = merger.into_merge_iter().unwrap();
         let mut prev_key = vec![];
         while let Some(result) = iter.next() {
             let (k, _v) = result.unwrap();
