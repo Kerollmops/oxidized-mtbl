@@ -4,12 +4,12 @@ use std::{cmp, io};
 
 use memmap::Mmap;
 
-use crate::{Writer, WriterBuilder, CompressionType};
-use crate::{Merger, MergerIter};
-use crate::Reader;
 use crate::INITIAL_SORTER_VEC_SIZE;
 use crate::{DEFAULT_COMPRESSION_LEVEL, DEFAULT_SORTER_MEMORY, MIN_SORTER_MEMORY};
 use crate::{DEFAULT_NB_CHUNKS, MIN_NB_CHUNKS};
+use crate::{Merger, MergerIter};
+use crate::{Reader, Error};
+use crate::{Writer, WriterBuilder, CompressionType};
 
 #[derive(Debug, Clone, Copy)]
 pub struct SorterBuilder<MF> {
@@ -115,7 +115,7 @@ impl<MF> Sorter<MF> {
 impl<MF> Sorter<MF>
 where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
 {
-    pub fn insert<K, V>(&mut self, key: K, val: V) -> io::Result<()>
+    pub fn insert<K, V>(&mut self, key: K, val: V) -> Result<(), Error>
     where K: AsRef<[u8]>,
           V: AsRef<[u8]>,
     {
@@ -137,7 +137,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         Ok(())
     }
 
-    fn write_chunk(&mut self) -> io::Result<()> {
+    fn write_chunk(&mut self) -> Result<(), Error> {
         let file = tempfile::tempfile()?;
         let mut writer = WriterBuilder::new()
             .compression_type(self.chunk_compression_type)
@@ -181,7 +181,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         Ok(())
     }
 
-    fn merge_chunks(&mut self) -> io::Result<()> {
+    fn merge_chunks(&mut self) -> Result<(), Error> {
         let file = tempfile::tempfile()?;
         let mut writer = WriterBuilder::new()
             .compression_type(self.chunk_compression_type)
@@ -189,9 +189,9 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
             .build(file);
 
         // Drain the chunks to mmap them and store them into a vector.
-        let sources: io::Result<Vec<_>> = self.chunks.drain(..).map(|f| unsafe {
+        let sources: Result<Vec<_>, Error> = self.chunks.drain(..).map(|f| unsafe {
             let mmap = Mmap::map(&f)?;
-            Ok(Reader::new(mmap).unwrap())
+            Reader::new(mmap)
         }).collect();
 
         // Create a merger to merge all those chunks.
@@ -210,7 +210,7 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         Ok(())
     }
 
-    pub fn write_into<W: io::Write>(self, writer: &mut Writer<W>) -> io::Result<()> {
+    pub fn write_into<W: io::Write>(self, writer: &mut Writer<W>) -> Result<(), Error> {
         let mut iter = self.into_iter()?;
         while let Some((key, val)) = iter.next() {
             writer.insert(key, val)?;
@@ -218,13 +218,13 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Option<Vec<u8>>
         Ok(())
     }
 
-    pub fn into_iter(mut self) -> io::Result<MergerIter<Mmap, MF>> {
+    pub fn into_iter(mut self) -> Result<MergerIter<Mmap, MF>, Error> {
         // Flush the pending unordered entries.
         self.write_chunk()?;
 
-        let sources: io::Result<Vec<_>> = self.chunks.into_iter().map(|f| unsafe {
+        let sources: Result<Vec<_>, Error> = self.chunks.into_iter().map(|f| unsafe {
             let mmap = Mmap::map(&f)?;
-            Ok(Reader::new(mmap).unwrap())
+            Reader::new(mmap)
         }).collect();
 
         let mut builder = Merger::builder(self.merge);

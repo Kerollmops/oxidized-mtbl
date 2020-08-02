@@ -172,7 +172,7 @@ impl<W: io::Write> Writer<W> {
 
         // We must write exactly 512 bytes at the end to store the metadata
         let mut tbuf = [0u8; METADATA_SIZE];
-        self.metadata.write_to_bytes(&mut tbuf);
+        self.metadata.write_to_bytes(&mut tbuf)?;
         self.writer.write_all(&tbuf)?;
 
         Ok(self.writer)

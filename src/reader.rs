@@ -6,7 +6,7 @@ use byteorder::{ByteOrder, LittleEndian};
 
 use crate::block::{Block, BlockIter};
 use crate::compression::decompress;
-use crate::error::Error;
+use crate::error::{Error, MtblError};
 use crate::METADATA_SIZE;
 use crate::varint::varint_decode64;
 use crate::{BytesView, FileVersion, Metadata};
@@ -30,7 +30,7 @@ impl ReaderBuilder {
 
     pub fn read<A: AsRef<[u8]>>(&mut self, data: A) -> Result<Reader<A>, Error> {
         if data.as_ref().len() < METADATA_SIZE {
-            return Err(Error::InvalidMetadataSize)
+            return Err(Error::from(MtblError::InvalidMetadataSize))
         }
 
         let metadata_offset = data.as_ref().len() - METADATA_SIZE;
@@ -45,7 +45,7 @@ impl ReaderBuilder {
         // FIXME why do I get 13 bytes!
         let max_index_block_offset = (data.as_ref().len() - METADATA_SIZE - 13) as u64;
         if metadata.index_block_offset > max_index_block_offset {
-            return Err(Error::InvalidIndexBlockOffset);
+            return Err(Error::from(MtblError::InvalidIndexBlockOffset));
         }
 
         let index_len_len: usize;
@@ -59,7 +59,7 @@ impl ReaderBuilder {
             index_len_len = varint_decode64(&data.as_ref()[metadata.index_block_offset as usize..], &mut tmp);
             index_len = tmp as usize;
             if index_len as u64 != tmp {
-                return Err(Error::InvalidIndexLength);
+                return Err(Error::from(MtblError::InvalidIndexLength));
             }
         }
 
@@ -73,7 +73,7 @@ impl ReaderBuilder {
             assert_eq!(index_crc, crc32c::crc32c(index_data.as_ref()));
         } }
 
-        let index = Block::init(index_data).unwrap();
+        let index = Block::init(index_data).ok_or(MtblError::InvalidBlock)?;
         let index = Arc::new(index);
         let verify_checksums = self.verify_checksums;
 
@@ -104,29 +104,31 @@ impl<A: AsRef<[u8]>> Reader<A> {
         &self.metadata
     }
 
-    pub fn get(self, key: &[u8]) -> Result<ReaderIntoGet<A>, ()> {
+    pub fn get(self, key: &[u8]) -> Result<Option<ReaderIntoGet<A>>, Error> {
         let mut iter = ReaderIntoIter::new_get(self, key)?;
-        iter.next().ok_or(())?;
-        Ok(ReaderIntoGet::new(iter.bi))
+        match iter.next() {
+            Some(_) => Ok(ReaderIntoGet::new(iter.bi)),
+            None => Ok(None),
+        }
     }
 
-    pub fn into_iter(self) -> Result<ReaderIntoIter<A>, ()> {
+    pub fn into_iter(self) -> Result<ReaderIntoIter<A>, Error> {
         ReaderIntoIter::new(self)
     }
 
-    pub fn iter_from(self, start: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+    pub fn iter_from(self, start: &[u8]) -> Result<ReaderIntoIter<A>, Error> {
         ReaderIntoIter::new_from(self, start)
     }
 
-    pub fn iter_prefix(self, prefix: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+    pub fn iter_prefix(self, prefix: &[u8]) -> Result<ReaderIntoIter<A>, Error> {
         ReaderIntoIter::new_get_prefix(self, prefix)
     }
 
-    pub fn iter_range(self, start: &[u8], end: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+    pub fn iter_range(self, start: &[u8], end: &[u8]) -> Result<ReaderIntoIter<A>, Error> {
         ReaderIntoIter::new_get_range(self, start, end)
     }
 
-    fn block(&self, offset: usize) -> Block<A> {
+    fn block(&self, offset: usize) -> Result<Block<A>, Error> {
         assert!(offset < self.data.len());
 
         let raw_contents_size_len: usize;
@@ -152,23 +154,25 @@ impl<A: AsRef<[u8]>> Reader<A> {
             assert_eq!(block_crc, calc_crc);
         } }
 
-        let data = decompress(self.metadata.compression_algorithm, raw_contents).unwrap();
+        let data = decompress(self.metadata.compression_algorithm, raw_contents)?;
         let data = match data {
             Cow::Borrowed(_) => self.data.slice(raw_start, raw_contents_size),
             Cow::Owned(bytes) => BytesView::from_bytes(bytes),
         };
 
-        Block::init(data).unwrap()
+        let block = Block::init(data).ok_or(MtblError::InvalidBlock)?;
+
+        Ok(block)
     }
 
-    fn block_at_index(&self, index_iter: &BlockIter<A>) -> Result<Block<A>, ()> {
+    fn block_at_index(&self, index_iter: &BlockIter<A>) -> Result<Block<A>, Error> {
         match index_iter.get() {
             Some((_key, val)) => {
                 let mut offset = 0;
                 varint_decode64(val, &mut offset);
-                Ok(self.block(offset as usize))
+                self.block(offset as usize)
             },
-            None => Err(()),
+            None => Err(Error::from(MtblError::InvalidBlock)),
         }
     }
 }
@@ -180,13 +184,13 @@ pub struct ReaderIntoGet<A> {
 }
 
 impl<A> ReaderIntoGet<A> {
-    fn new(block_iter: BlockIter<A>) -> ReaderIntoGet<A> {
-        let (offset, length) = block_iter.val.unwrap();
-        ReaderIntoGet {
+    fn new(block_iter: BlockIter<A>) -> Option<ReaderIntoGet<A>> {
+        let (offset, length) = block_iter.val?;
+        Some(ReaderIntoGet {
             block: block_iter.block,
             val_offset: offset,
             val_len: length,
-        }
+        })
     }
 }
 
@@ -215,7 +219,7 @@ pub struct ReaderIntoIter<A> {
 }
 
 impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
-    fn new(r: Reader<A>) -> Result<ReaderIntoIter<A>, ()> {
+    fn new(r: Reader<A>) -> Result<ReaderIntoIter<A>, Error> {
         let mut index_iter = BlockIter::init(r.index.clone());
         index_iter.seek_to_first();
 
@@ -235,7 +239,7 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
         })
     }
 
-    fn new_from(r: Reader<A>, key: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+    fn new_from(r: Reader<A>, key: &[u8]) -> Result<ReaderIntoIter<A>, Error> {
         let mut index_iter = BlockIter::init(r.index.clone());
         index_iter.seek(key);
 
@@ -256,28 +260,28 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
         })
     }
 
-    fn new_get(r: Reader<A>, key: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+    fn new_get(r: Reader<A>, key: &[u8]) -> Result<ReaderIntoIter<A>, Error> {
         let mut iter = ReaderIntoIter::new_from(r, key)?;
         iter.k.extend_from_slice(key);
         iter.it_type = ReaderIterType::Get;
         Ok(iter)
     }
 
-    fn new_get_prefix(r: Reader<A>, prefix: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+    fn new_get_prefix(r: Reader<A>, prefix: &[u8]) -> Result<ReaderIntoIter<A>, Error> {
         let mut iter = ReaderIntoIter::new_from(r, prefix)?;
         iter.k.extend_from_slice(prefix);
         iter.it_type = ReaderIterType::GetPrefix;
         Ok(iter)
     }
 
-    fn new_get_range(r: Reader<A>, start: &[u8], end: &[u8]) -> Result<ReaderIntoIter<A>, ()> {
+    fn new_get_range(r: Reader<A>, start: &[u8], end: &[u8]) -> Result<ReaderIntoIter<A>, Error> {
         let mut iter = ReaderIntoIter::new_from(r, start)?;
         iter.k.extend_from_slice(end);
         iter.it_type = ReaderIterType::GetRange;
         Ok(iter)
     }
 
-    pub fn seek(&mut self, key: &[u8]) -> bool {
+    pub fn seek(&mut self, key: &[u8]) -> Result<bool, Error> {
         self.index_iter.seek(key);
 
         let (key, val) = match self.index_iter.get() {
@@ -287,7 +291,7 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
                 // iterator as invalid and return success. The next
                 // next() operation will return false.
                 self.valid = false;
-                return true;
+                return Ok(true);
             }
         };
 
@@ -298,7 +302,7 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
         // currently-decoded block.
         if self.block_offset != new_offset {
             self.block_offset = new_offset;
-            let b = self.r.block(new_offset as usize);
+            let b = self.r.block(new_offset as usize)?;
             self.bi = BlockIter::init(Arc::new(b));
         }
 
@@ -307,7 +311,7 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
         self.first = true;
         self.valid = true;
 
-        return true;
+        return Ok(true);
     }
 
     pub fn next(&mut self) -> Option<(&[u8], &[u8])> {

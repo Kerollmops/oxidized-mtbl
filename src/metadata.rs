@@ -1,9 +1,9 @@
-use std::mem;
+use std::{io, mem};
 
 use byteorder::{LittleEndian, ByteOrder, ReadBytesExt, WriteBytesExt};
 
 use crate::compression::CompressionType;
-use crate::error::Error;
+use crate::error::{Error, MtblError};
 use crate::FileVersion;
 use crate::{METADATA_SIZE, DEFAULT_BLOCK_SIZE, DEFAULT_COMPRESSION_TYPE};
 use crate::{MAGIC, MAGIC_V1};
@@ -29,20 +29,20 @@ impl Metadata {
         let file_version = match magic {
             MAGIC_V1 => FileVersion::FormatV1,
             MAGIC => FileVersion::FormatV2,
-            _ => return Err(Error::InvalidFormatVersion),
+            _ => return Err(Error::from(MtblError::InvalidFormatVersion)),
         };
 
         let mut b = bytes;
-        let index_block_offset = b.read_u64::<LittleEndian>().unwrap();
-        let data_block_size = b.read_u64::<LittleEndian>().unwrap();
-        let compression_algorithm = b.read_u64::<LittleEndian>().unwrap();
-        let compression_algorithm = CompressionType::from_u64(compression_algorithm).ok_or(Error::InvalidCompressionAlgorithm)?;
-        let count_entries = b.read_u64::<LittleEndian>().unwrap();
-        let count_data_blocks = b.read_u64::<LittleEndian>().unwrap();
-        let bytes_data_blocks = b.read_u64::<LittleEndian>().unwrap();
-        let bytes_index_block = b.read_u64::<LittleEndian>().unwrap();
-        let bytes_keys = b.read_u64::<LittleEndian>().unwrap();
-        let bytes_values = b.read_u64::<LittleEndian>().unwrap();
+        let index_block_offset = b.read_u64::<LittleEndian>()?;
+        let data_block_size = b.read_u64::<LittleEndian>()?;
+        let compression_algorithm = b.read_u64::<LittleEndian>()?;
+        let compression_algorithm = CompressionType::from_u64(compression_algorithm).ok_or(MtblError::InvalidCompressionAlgorithm)?;
+        let count_entries = b.read_u64::<LittleEndian>()?;
+        let count_data_blocks = b.read_u64::<LittleEndian>()?;
+        let bytes_data_blocks = b.read_u64::<LittleEndian>()?;
+        let bytes_index_block = b.read_u64::<LittleEndian>()?;
+        let bytes_keys = b.read_u64::<LittleEndian>()?;
+        let bytes_values = b.read_u64::<LittleEndian>()?;
 
         Ok(Metadata {
             file_version,
@@ -58,24 +58,24 @@ impl Metadata {
         })
     }
 
-    pub(crate) fn write_to_bytes(&self, bytes: &mut [u8]) {
+    pub(crate) fn write_to_bytes(&self, bytes: &mut [u8]) -> io::Result<()> {
         bytes.iter_mut().for_each(|x| *x = 0);
 
         // split, left part for data, right part for magic number
         let (mut data, magic) = bytes.split_at_mut(METADATA_SIZE - mem::size_of::<u32>());
 
-        data.write_u64::<LittleEndian>(self.index_block_offset).unwrap();
-        data.write_u64::<LittleEndian>(self.data_block_size).unwrap();
-        data.write_u64::<LittleEndian>(self.compression_algorithm as u64).unwrap();
-        data.write_u64::<LittleEndian>(self.count_entries).unwrap();
-        data.write_u64::<LittleEndian>(self.count_data_blocks).unwrap();
-        data.write_u64::<LittleEndian>(self.bytes_data_blocks).unwrap();
-        data.write_u64::<LittleEndian>(self.bytes_index_block).unwrap();
-        data.write_u64::<LittleEndian>(self.bytes_keys).unwrap();
-        data.write_u64::<LittleEndian>(self.bytes_values).unwrap();
+        data.write_u64::<LittleEndian>(self.index_block_offset)?;
+        data.write_u64::<LittleEndian>(self.data_block_size)?;
+        data.write_u64::<LittleEndian>(self.compression_algorithm as u64)?;
+        data.write_u64::<LittleEndian>(self.count_entries)?;
+        data.write_u64::<LittleEndian>(self.count_data_blocks)?;
+        data.write_u64::<LittleEndian>(self.bytes_data_blocks)?;
+        data.write_u64::<LittleEndian>(self.bytes_index_block)?;
+        data.write_u64::<LittleEndian>(self.bytes_keys)?;
+        data.write_u64::<LittleEndian>(self.bytes_values)?;
 
         // Write the magic number at the end of the buffer
-        LittleEndian::write_u32(magic, MAGIC)
+        Ok(LittleEndian::write_u32(magic, MAGIC))
     }
 }
 

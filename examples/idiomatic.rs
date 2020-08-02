@@ -1,5 +1,4 @@
 use std::fs::OpenOptions;
-use std::io;
 
 use oxidized_mtbl::*;
 use memmap::Mmap;
@@ -9,7 +8,7 @@ fn concat_merge(_key: &[u8], vals: &[Vec<u8>]) -> Option<Vec<u8>> {
     Some(vals.iter().cloned().flatten().collect())
 }
 
-fn main() -> io::Result<()> {
+fn main() -> Result<(), Error> {
     let mut file_options = OpenOptions::new();
     file_options.read(true).write(true).truncate(true).create(true);
 
