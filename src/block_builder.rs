@@ -38,11 +38,12 @@ impl BlockBuilder {
     }
 
     pub fn current_size_estimate(&self) -> usize {
-        if self.buf.len() > u32::max_value() as usize {
-            self.buf.len() + (self.restarts.len() * mem::size_of::<u64>()) + mem::size_of::<u32>()
+        let factor = if self.buf.len() > u32::max_value() as usize {
+            mem::size_of::<u64>()
         } else {
-            self.buf.len() + (self.restarts.len() * mem::size_of::<u64>() / 2) + mem::size_of::<u32>()
-        }
+            mem::size_of::<u64>() / 2
+        };
+        self.buf.len() + (self.restarts.len() * factor) + mem::size_of::<u32>()
     }
 
     pub fn add(&mut self, key: &[u8], val: &[u8]) {
@@ -53,11 +54,7 @@ impl BlockBuilder {
 
         // see how much sharing to do with previous key
         if self.counter < self.block_restart_interval {
-            let min_length = if self.last_key.len() > key.len() { key.len() } else { self.last_key.len() };
-            for (l, k) in self.last_key.iter().zip(key) {
-                if shared >= min_length || l != k { break }
-                shared += 1;
-            }
+            shared = self.last_key.iter().zip(key).take_while(|(l, k)| l == k).count();
         } else {
             // restart compression
             self.restarts.push(self.buf.len() as u64);
