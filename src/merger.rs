@@ -199,9 +199,13 @@ where A: AsRef<[u8]>,
         }
 
         if self.pending {
-            self.merged_val = match (self.merge)(&self.cur_key, &self.cur_vals) {
-                Ok(val) => val,
-                Err(e) => return Some(Err(Error::Merge(e))),
+            self.merged_val = if self.cur_vals.len() == 1 {
+                self.cur_vals.pop().unwrap()
+            } else {
+                match (self.merge)(&self.cur_key, &self.cur_vals) {
+                    Ok(val) => val,
+                    Err(e) => return Some(Err(Error::Merge(e))),
+                }
             };
             self.pending = false;
             Some(Ok((&self.cur_key, &self.merged_val)))
@@ -265,6 +269,7 @@ mod tests {
     #[test]
     fn easy() {
         fn merge(_key: &[u8], values: &[Vec<u8>]) -> Result<Vec<u8>, ()> {
+            assert_ne!(values.len(), 1);
             let len = values.iter().map(|v| v.len()).sum::<usize>();
             let mut out = Vec::with_capacity(len);
             values.iter().for_each(|v| out.extend_from_slice(v));

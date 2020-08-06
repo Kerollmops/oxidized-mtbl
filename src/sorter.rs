@@ -158,7 +158,11 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Result<Vec<u8>, U>
                     if key == &entry.key() {
                         vals.push(entry.val().to_vec());
                     } else {
-                        let merged_val = (self.merge)(&key, &vals).map_err(Error::Merge)?;
+                        let merged_val = if vals.len() == 1 {
+                            vals.pop().unwrap()
+                        } else {
+                            (self.merge)(&key, &vals).map_err(Error::Merge)?
+                        };
                         writer.insert(&key, &merged_val)?;
                         key.clear();
                         vals.clear();
@@ -169,8 +173,12 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Result<Vec<u8>, U>
             }
         }
 
-        if let Some((key, vals)) = current.take() {
-            let merged_val = (self.merge)(&key, &vals).map_err(Error::Merge)?;
+        if let Some((key, mut vals)) = current.take() {
+            let merged_val = if vals.len() == 1 {
+                vals.pop().unwrap()
+            } else {
+                (self.merge)(&key, &vals).map_err(Error::Merge)?
+            };
             writer.insert(&key, &merged_val)?;
         }
 
@@ -243,6 +251,7 @@ mod tests {
     #[test]
     fn simple() {
         fn merge(_key: &[u8], vals: &[Vec<u8>]) -> Result<Vec<u8>, ()> {
+            assert_ne!(vals.len(), 1);
             Ok(vals.iter().flatten().cloned().collect())
         }
 
