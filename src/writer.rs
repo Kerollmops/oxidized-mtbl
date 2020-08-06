@@ -98,11 +98,13 @@ impl Writer<Vec<u8>> {
     }
 }
 
-impl<W: io::Write> Writer<W> {
+impl Writer<WriterBuilder> {
     pub fn builder() -> WriterBuilder {
         WriterBuilder::new()
     }
+}
 
+impl<W: io::Write> Writer<W> {
     pub fn new(writer: W) -> Writer<W> {
         WriterBuilder::new().build(writer)
     }
