@@ -104,6 +104,10 @@ impl<A: AsRef<[u8]>> Reader<A> {
         &self.metadata
     }
 
+    pub fn as_bytes(&self) -> &[u8] {
+        self.data.as_ref()
+    }
+
     pub fn get(self, key: &[u8]) -> Result<Option<ReaderIntoGet<A>>, Error> {
         let mut iter = ReaderIntoIter::new_get(self, key)?;
         match iter.next() {
