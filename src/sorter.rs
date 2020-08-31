@@ -140,6 +140,9 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Result<Vec<u8>, U>
     }
 
     fn write_chunk(&mut self) -> Result<(), Error<U>> {
+        debug!("writing a chunk...");
+        let before_write = Instant::now();
+
         let file = tempfile::tempfile()?;
         let mut writer = WriterBuilder::new()
             .compression_type(self.chunk_compression_type)
@@ -187,6 +190,8 @@ where MF: Fn(&[u8], &[Vec<u8>]) -> Result<Vec<u8>, U>
         let file = writer.into_inner()?;
         self.chunks.push(file);
         self.entry_bytes = 0;
+
+        debug!("writing a chunk took {:.02?}", before_write.elapsed());
 
         Ok(())
     }
