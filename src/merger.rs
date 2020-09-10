@@ -108,10 +108,9 @@ impl<A: AsRef<[u8]>, MF> Merger<A, MF> {
     pub fn into_merge_iter(self) -> Result<MergerIter<A, MF>, Error> {
         let mut heap = BinaryHeap::new();
         for source in self.sources {
-            if let Ok(iter) = source.into_iter() {
-                if let Some(entry) = Entry::new(iter)? {
-                    heap.push(Reverse(entry));
-                }
+            let iter = source.into_iter()?;
+            if let Some(entry) = Entry::new(iter)? {
+                heap.push(Reverse(entry));
             }
         }
 
@@ -128,10 +127,9 @@ impl<A: AsRef<[u8]>, MF> Merger<A, MF> {
     pub fn into_iter(self) -> Result<MultiIter<A>, Error> {
         let mut heap = BinaryHeap::new();
         for source in self.sources {
-            if let Ok(iter) = source.into_iter() {
-                if let Some(entry) = Entry::new(iter)? {
-                    heap.push(Reverse(entry));
-                }
+            let iter = source.into_iter()?;
+            if let Some(entry) = Entry::new(iter)? {
+                heap.push(Reverse(entry));
             }
         }
 
