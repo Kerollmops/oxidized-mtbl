@@ -240,8 +240,8 @@ fn bytes_shortest_separator(start: &mut Vec<u8>, limit: &[u8]) {
     let min_length = if start.len() < limit.len() { start.len() } else { limit.len() };
 
     let mut diff_index = 0;
-    for (s, l) in start.iter().zip(limit) {
-        if diff_index >= min_length || s != l { break }
+    for (s, l) in start.iter().zip(limit).take(min_length) {
+        if s != l { break }
         diff_index += 1;
     }
 
@@ -251,7 +251,7 @@ fn bytes_shortest_separator(start: &mut Vec<u8>, limit: &[u8]) {
     if diff_byte < u8::max_value() && diff_byte + 1 < limit[diff_index] {
         start[diff_index] += 1;
         start.truncate(diff_index + 1);
-    } else if diff_index < min_length - mem::size_of::<u16>() {
+    } else if diff_index < min_length.saturating_sub(mem::size_of::<u16>()) {
         // awww yeah, big endian arithmetic on strings
         let u_start = BigEndian::read_u16(&start[diff_index..]);
         let u_limit = BigEndian::read_u16(&limit[diff_index..]);
@@ -295,5 +295,12 @@ mod tests {
         }
 
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn bytes_shortest_separator_to_short() {
+        let mut start = vec![49, 115, 116];
+        let limit = &[50];
+        bytes_shortest_separator(&mut start, limit);
     }
 }

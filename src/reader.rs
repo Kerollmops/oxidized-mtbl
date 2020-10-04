@@ -395,7 +395,7 @@ impl<A: AsRef<[u8]>> ReaderIntoIter<A> {
                 }
             }
             ReaderIterType::GetRange => {
-                if key > &self.k {
+                if key > self.k.as_slice() {
                     self.valid = false;
                 }
             }
